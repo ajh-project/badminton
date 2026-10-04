@@ -1,6 +1,6 @@
 ﻿# 🏸 둘이서 배드민턴
 
-**https://ahnjonghyunn.github.io/badminton/**
+**https://ajh-project.github.io/badminton/**
 
 한 화면에서 둘이 하는 배드민턴. 컴퓨터와도 할 수 있어요. 11점 먼저 내면 승리!
 

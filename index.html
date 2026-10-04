@@ -9,12 +9,19 @@
     <meta property="og:title" content="🏸 배드민턴 3D" />
     <meta property="og:description" content="내 얼굴로 하는 3D 배드민턴. 1인칭·3인칭·중계 시점, 둘이서 또는 컴퓨터와!" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏸</text></svg>" />
+    <!-- 홈 화면에 추가하면 앱처럼 전체 화면 (아이폰은 이 방법으로만 전체 화면) -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icon-180.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="배드민턴" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700;900&display=swap" rel="stylesheet" />
-    <script type="module" crossorigin src="./assets/main-OcBUUm82.js"></script>
+    <script type="module" crossorigin src="./assets/main-XYAXaSa8.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/modulepreload-polyfill-P2Xu9kJm.js">
-    <link rel="stylesheet" crossorigin href="./assets/main-bKDW0L-J.css">
+    <link rel="stylesheet" crossorigin href="./assets/main-DMukFkEy.css">
   </head>
   <body class="solo">
     <canvas id="c"></canvas>
@@ -28,6 +35,7 @@
     </div>
     <div class="topbtns">
       <button id="btn-view" title="시점 바꾸기 (V)">👁 <span id="view-label">3인칭</span></button>
+      <button id="btn-full" title="전체 화면">⛶</button>
       <button id="btn-menu" title="메뉴 (Esc)">⏸</button>
     </div>
     <div id="toasts" class="toasts"></div>
@@ -63,8 +71,40 @@
           <p class="label">누구랑 할까요?</p>
           <div class="seg" data-setting="mode">
             <button data-value="cpu">🤖 컴퓨터랑</button>
-            <button data-value="duo">👫 둘이서</button>
+            <button data-value="duo">👫 한 화면 둘이서</button>
+            <button data-value="online">🌐 온라인 대전</button>
           </div>
+        </section>
+
+        <!-- 온라인 대전: 방 만들기 / 참가 -->
+        <section id="online" class="online">
+          <div class="on-idle">
+            <button id="on-host" class="obtn primary" type="button">방 만들기</button>
+            <div class="join">
+              <input id="on-code" maxlength="5" placeholder="방 코드" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+              <button id="on-join" class="obtn" type="button">참가하기</button>
+            </div>
+          </div>
+          <div class="on-room">
+            <div class="room-info">
+              <canvas id="on-qr" width="132" height="132"></canvas>
+              <div>
+                <p class="room-label">방 코드</p>
+                <p class="room-code" id="on-room-code">-----</p>
+                <div class="room-btns">
+                  <button id="on-copy" class="obtn small" type="button">링크 복사</button>
+                  <button id="on-share" class="obtn small" type="button">공유</button>
+                </div>
+              </div>
+            </div>
+            <p class="room-tip">상대 폰 카메라로 QR을 찍거나, 링크를 카톡으로 보내세요.</p>
+          </div>
+          <p class="on-status" id="on-status"></p>
+          <div class="on-opp" id="on-opp">
+            <canvas class="face" id="on-opp-face" width="96" height="96"></canvas>
+            <span id="on-opp-text">상대</span>
+          </div>
+          <button id="on-leave" class="link-btn" type="button">방 나가기</button>
         </section>
 
         <section>
@@ -114,7 +154,8 @@
             <label class="check"><input type="checkbox" data-look="auto" /> 자동 스윙 (쉬움)</label>
           </div>
         </section>
-        <p class="privacy">얼굴 사진은 이 기기 안에서만 쓰여요. 어디에도 올라가지 않아요.</p>
+        <p class="privacy" id="privacy">얼굴 사진은 이 기기 안에서만 쓰여요. 어디에도 올라가지 않아요.</p>
+        <p class="ios-tip" id="ios-tip">아이폰은 공유 버튼 → <b>홈 화면에 추가</b>로 열면 전체 화면으로 할 수 있어요.</p>
 
         <button id="start" class="start">시작하기</button>
 

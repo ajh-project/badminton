@@ -69,6 +69,10 @@ export interface Match {
   lastPoint: { side: Side; reason: string } | null
   events: GameEvent[]
   time: number
+  /** 온라인 참가자 쪽: 이동과 셔틀 비행만 계산하고 타격·득점 판정은 방장에게 맡김 */
+  remote: boolean
+  /** 위치를 네트워크로 받는 선수 (방장 쪽에서 본 참가자) */
+  external: [boolean, boolean]
 }
 
 function makePlayer(side: Side): Player {
@@ -103,15 +107,22 @@ export function newMatch(): Match {
     lastPoint: null,
     events: [],
     time: 0,
+    remote: false,
+    external: [false, false],
   }
 }
 
-export function startMatch(m: Match, opts: { cpu: [boolean, boolean]; auto: [boolean, boolean] }) {
+export function startMatch(
+  m: Match,
+  opts: { cpu: [boolean, boolean]; auto: [boolean, boolean]; remote?: boolean; external?: [boolean, boolean] },
+) {
   const fresh = newMatch()
   fresh.players.forEach((p, i) => {
     p.isCpu = opts.cpu[i]
     p.autoSwing = opts.auto[i]
   })
+  fresh.remote = opts.remote ?? false
+  fresh.external = opts.external ?? [false, false]
   Object.assign(m, fresh)
   m.phase = 'serve'
   setupServe(m)
@@ -214,11 +225,14 @@ function shoot(m: Match, p: Player, c: Controls, kind: ShotKind) {
 
 // ---------- 매 프레임 ----------
 
+let stepDt = 1 / 120
+
 export function step(m: Match, dt: number, input: [Controls, Controls]) {
+  stepDt = dt
   m.time += dt
   if (m.phase === 'menu' || m.phase === 'over') return
 
-  if (m.phase === 'point') {
+  if (m.phase === 'point' && !m.remote) {
     m.timer -= dt
     if (m.timer <= 0) {
       if (m.winner !== null) m.phase = 'over'
@@ -236,6 +250,11 @@ export function step(m: Match, dt: number, input: [Controls, Controls]) {
   for (const p of m.players) {
     const c = controls[p.side]
     const locked = m.phase === 'point' || m.phase === 'serve' // 서브 전에는 제자리
+    if (m.external[p.side]) {
+      // 위치는 네트워크로 받음. 스윙만 처리
+      swingLogic(m, p, c)
+      continue
+    }
     // 이동 (선수 기준 → 월드)
     let mx = locked ? 0 : c.mx
     let mz = locked ? 0 : c.mz
@@ -263,18 +282,24 @@ export function step(m: Match, dt: number, input: [Controls, Controls]) {
     p.y = Math.max(0, p.y + p.vy * dt)
     if (p.y === 0 && p.vy < 0) p.vy = 0
 
-    // 스윙
-    if (m.phase !== 'point' && c.swing && !p.prevSwing && p.swing <= 0) {
-      p.swing = SWING_TIME
-      p.swingHit = false
-      p.swingOver = m.shuttle.p.y > eyeHeight(p) - 0.2
-    }
-    p.swing = Math.max(0, p.swing - dt)
-    p.prevSwing = c.swing
+    swingLogic(m, p, c)
     p.prevJump = c.jump
   }
 
   const s = m.shuttle
+
+  if (m.remote) {
+    // 참가자 쪽: 셔틀 비행만 (판정은 방장 스냅샷으로 받음)
+    if (s.heldBy !== null) holdShuttle(m)
+    else if (s.inPlay) {
+      for (let i = 0; i < 4; i++) stepShuttle(s.p, s.v, dt / 4)
+      if (s.p.y < 0.02) {
+        s.p.y = 0.02
+        s.inPlay = false
+      }
+    }
+    return
+  }
 
   if (m.phase === 'serve') {
     holdShuttle(m)
@@ -339,6 +364,16 @@ export function step(m: Match, dt: number, input: [Controls, Controls]) {
     }
     scorePoint(m, winner, reason)
   }
+}
+
+function swingLogic(m: Match, p: Player, c: Controls) {
+  if (m.phase !== 'point' && c.swing && !p.prevSwing && p.swing <= 0) {
+    p.swing = SWING_TIME
+    p.swingHit = false
+    p.swingOver = m.shuttle.p.y > eyeHeight(p) - 0.2
+  }
+  p.swing = Math.max(0, p.swing - stepDt)
+  p.prevSwing = c.swing
 }
 
 function scorePoint(m: Match, side: Side, reason: string) {

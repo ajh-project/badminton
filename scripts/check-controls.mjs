@@ -1,4 +1,4 @@
-// 개발용 확인: 키보드로 이동·스윙이 되는지 + 폰 가로 화면(터치 버튼) 캡처
+﻿// 개발용 확인: 키보드로 이동·스윙이 되는지 + 폰 가로 화면(터치 버튼) 캡처
 import { chromium } from 'playwright-core'
 
 const URL = process.argv[2] ?? 'http://localhost:5175/'
@@ -14,8 +14,8 @@ const errs = []
   await page.click('.seg[data-setting="view"] button[data-value="third"]')
   await page.click('#start')
   await page.waitForTimeout(400)
-  // 서브 (스페이스를 아주 짧게) → 랠리 시작
-  await page.keyboard.press('Space')
+  // 서브 (F를 아주 짧게) → 랠리 시작
+  await page.keyboard.press('KeyF')
   await page.waitForTimeout(600)
   const phase = await page.evaluate(() => window.__match.phase)
   const before = await page.evaluate(() => ({ ...window.__match.players[0] }))
@@ -26,6 +26,11 @@ const errs = []
   await page.waitForTimeout(300)
   await page.keyboard.up('KeyW')
   const after = await page.evaluate(() => ({ ...window.__match.players[0] }))
+  await page.keyboard.down('Space')
+  await page.waitForTimeout(80)
+  const jumpY = await page.evaluate(() => window.__match.players[0].y)
+  await page.keyboard.up('Space')
+  console.log('Space → jump height', jumpY.toFixed(2))
   await page.keyboard.press('KeyV')
   await page.waitForTimeout(200)
   const view = await page.evaluate(() => window.__settings.view)

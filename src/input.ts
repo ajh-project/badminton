@@ -45,22 +45,22 @@ export function clearTaps() {
 const k = (...codes: string[]) => codes.some((c) => down.has(c) || tapped.has(c))
 const axis = (neg: boolean, pos: boolean) => (pos ? 1 : 0) - (neg ? 1 : 0)
 
-/** solo: 혼자 할 때는 WASD·방향키 둘 다, 스윙은 Space/F/Enter/클릭 */
+/** solo: 혼자 할 때는 WASD·방향키 둘 다. 점프는 Space, 스윙은 F/J/Enter/클릭 */
 export function readKeyboard(side: 0 | 1, solo: boolean): RawControls {
   if (solo) {
     return {
       mx: axis(k('KeyA', 'ArrowLeft'), k('KeyD', 'ArrowRight')),
       my: axis(k('KeyS', 'ArrowDown'), k('KeyW', 'ArrowUp')),
-      swing: k('Space', 'KeyF', 'Enter', 'KeyJ') || mouseSwing || mouseTapped,
-      jump: k('KeyG', 'ShiftLeft', 'ShiftRight', 'KeyK'),
+      swing: k('KeyF', 'KeyJ', 'Enter') || mouseSwing || mouseTapped,
+      jump: k('Space', 'KeyG', 'ShiftLeft', 'ShiftRight', 'KeyK'),
     }
   }
   if (side === 0) {
     return {
       mx: axis(k('KeyA'), k('KeyD')),
       my: axis(k('KeyS'), k('KeyW')),
-      swing: k('KeyF', 'Space'),
-      jump: k('KeyG'),
+      swing: k('KeyF'),
+      jump: k('Space', 'KeyG'),
     }
   }
   return {

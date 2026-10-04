@@ -373,6 +373,22 @@ section {
 .pcard[data-player='1'] {
   border-color: #cfe5ff;
 }
+.pcard.drop {
+  border-style: dashed;
+  background: #f6faff;
+}
+.is-touch .paste-hint {
+  display: none;
+}
+.paste-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--dim);
+}
+.pcard.paste-target .paste-hint {
+  color: var(--ink);
+  font-weight: 700;
+}
 .ptitle {
   margin: 0;
   display: flex;

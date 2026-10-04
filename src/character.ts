@@ -68,7 +68,7 @@ function defaultFace(gender: Gender): HTMLCanvasElement {
 }
 
 /** 업로드한 사진 → 얼굴 텍스처 (가운데를 잘라 가장자리를 피부색으로 부드럽게) */
-export async function photoToFace(file: File): Promise<HTMLCanvasElement> {
+export async function photoToFace(file: Blob): Promise<HTMLCanvasElement> {
   const bmp = await createImageBitmap(file)
   const c = document.createElement('canvas')
   c.width = c.height = 256

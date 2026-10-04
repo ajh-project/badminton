@@ -288,6 +288,33 @@ function syncMenu() {
          <tr><td>샷</td><td colspan="2">스윙할 때 앞 → 드라이브, 뒤 → 드롭, 점프하며 → 스매시</td></tr></table>`
 }
 
+async function setFacePhoto(i: Side, file: Blob) {
+  try {
+    faces[i] = await photoToFace(file)
+  } catch {
+    alert('이 사진은 쓸 수 없어요. 다른 사진을 골라주세요.')
+  }
+  syncMenu()
+}
+
+let pasteTarget: Side = 0
+function selectPasteTarget(i: Side) {
+  if (settings.mode === 'cpu' && i === 1) return
+  pasteTarget = i
+  for (const c of document.querySelectorAll<HTMLElement>('.pcard')) c.classList.toggle('paste-target', Number(c.dataset.player) === i)
+}
+
+// 이미지 복사 후 Ctrl+V → 선택된 카드의 얼굴로
+addEventListener('paste', (e) => {
+  if ($('#menu').classList.contains('hidden')) return
+  const item = [...(e.clipboardData?.items ?? [])].find((it) => it.type.startsWith('image/'))
+  const file = item?.getAsFile()
+  if (file) {
+    e.preventDefault()
+    void setFacePhoto(settings.mode === 'cpu' ? 0 : pasteTarget, file)
+  }
+})
+
 function bindMenu() {
   for (const seg of document.querySelectorAll<HTMLElement>('.seg[data-setting]')) {
     seg.addEventListener('click', (e) => {
@@ -320,15 +347,23 @@ function bindMenu() {
       settings.auto[i] = (e.target as HTMLInputElement).checked
       saveSettings()
     })
-    $<HTMLInputElement>('input[type=file]', card).addEventListener('change', async (e) => {
+    $<HTMLInputElement>('input[type=file]', card).addEventListener('change', (e) => {
       const file = (e.target as HTMLInputElement).files?.[0]
-      if (!file) return
-      try {
-        faces[i] = await photoToFace(file)
-      } catch {
-        alert('이 사진은 쓸 수 없어요. 다른 사진을 골라주세요.')
-      }
-      syncMenu()
+      if (file) void setFacePhoto(i, file)
+    })
+    // 카드를 누르면 붙여넣기(Ctrl+V) 대상이 됨
+    card.addEventListener('pointerdown', () => selectPasteTarget(i))
+    // 사진 파일이나 브라우저 이미지를 카드에 끌어다 놓기
+    card.addEventListener('dragover', (e) => {
+      e.preventDefault()
+      card.classList.add('drop')
+    })
+    card.addEventListener('dragleave', () => card.classList.remove('drop'))
+    card.addEventListener('drop', (e) => {
+      e.preventDefault()
+      card.classList.remove('drop')
+      const file = [...(e.dataTransfer?.files ?? [])].find((f) => f.type.startsWith('image/'))
+      if (file) void setFacePhoto(i, file)
     })
     $('.reset-face', card).addEventListener('click', () => {
       faces[i] = null
@@ -400,6 +435,7 @@ function showOver() {
 }
 
 bindMenu()
+selectPasteTarget(0)
 syncMenu()
 bindKeyboard((code) => {
   if (code === 'KeyV' && document.body.classList.contains('playing')) cycleView()

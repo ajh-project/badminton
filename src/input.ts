@@ -1,60 +1,155 @@
-// 키보드 + 터치 버튼 입력 → 선수별 조작 상태
+// 입력: 키보드(한 대로 둘이서) + 터치 조이스틱/버튼. 결과는 "화면 기준" 조작값
 
-import type { Controls } from './game'
+export interface RawControls {
+  mx: number // 화면 오른쪽 +
+  my: number // 화면 위(앞) +
+  jump: boolean
+  swing: boolean
+}
 
-export const controls: [Controls, Controls] = [
-  { left: false, right: false, jump: false, swing: false },
-  { left: false, right: false, jump: false, swing: false },
+const blank = (): RawControls => ({ mx: 0, my: 0, jump: false, swing: false })
+
+const down = new Set<string>()
+/** 한 프레임보다 짧게 눌렀다 뗀 키도 놓치지 않도록, 다음 프레임에 읽을 때까지 기억 */
+const tapped = new Set<string>()
+let mouseSwing = false
+let mouseTapped = false
+const touch: [RawControls, RawControls] = [blank(), blank()]
+
+export function bindKeyboard(onKey: (code: string) => void) {
+  addEventListener('keydown', (e) => {
+    if (e.repeat) return
+    if (/^(Arrow|Space|Enter)/.test(e.code) || e.code === 'Space') e.preventDefault()
+    down.add(e.code)
+    tapped.add(e.code)
+    onKey(e.code)
+  })
+  addEventListener('keyup', (e) => down.delete(e.code))
+  addEventListener('blur', () => down.clear())
+}
+
+export function bindMouseSwing(el: HTMLElement) {
+  el.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse') mouseSwing = mouseTapped = true
+  })
+  addEventListener('pointerup', () => (mouseSwing = false))
+}
+
+/** 매 프레임 입력을 읽은 뒤 호출 */
+export function clearTaps() {
+  tapped.clear()
+  mouseTapped = false
+  for (const t of touchTapped) t.swing = t.jump = false
+}
+
+const k = (...codes: string[]) => codes.some((c) => down.has(c) || tapped.has(c))
+const axis = (neg: boolean, pos: boolean) => (pos ? 1 : 0) - (neg ? 1 : 0)
+
+/** solo: 혼자 할 때는 WASD·방향키 둘 다, 스윙은 Space/F/Enter/클릭 */
+export function readKeyboard(side: 0 | 1, solo: boolean): RawControls {
+  if (solo) {
+    return {
+      mx: axis(k('KeyA', 'ArrowLeft'), k('KeyD', 'ArrowRight')),
+      my: axis(k('KeyS', 'ArrowDown'), k('KeyW', 'ArrowUp')),
+      swing: k('Space', 'KeyF', 'Enter', 'KeyJ') || mouseSwing || mouseTapped,
+      jump: k('KeyG', 'ShiftLeft', 'ShiftRight', 'KeyK'),
+    }
+  }
+  if (side === 0) {
+    return {
+      mx: axis(k('KeyA'), k('KeyD')),
+      my: axis(k('KeyS'), k('KeyW')),
+      swing: k('KeyF', 'Space'),
+      jump: k('KeyG'),
+    }
+  }
+  return {
+    mx: axis(k('ArrowLeft'), k('ArrowRight')),
+    my: axis(k('ArrowDown'), k('ArrowUp')),
+    swing: k('Enter', 'Numpad0', 'Slash'),
+    jump: k('ShiftRight', 'Numpad1', 'Period'),
+  }
+}
+
+const touchTapped = [
+  { swing: false, jump: false },
+  { swing: false, jump: false },
 ]
 
-type Action = keyof Controls
-
-const KEYS: Record<string, [0 | 1, Action]> = {
-  KeyA: [0, 'left'],
-  KeyD: [0, 'right'],
-  KeyW: [0, 'jump'],
-  KeyS: [0, 'swing'],
-  Space: [0, 'swing'],
-  ArrowLeft: [1, 'left'],
-  ArrowRight: [1, 'right'],
-  ArrowUp: [1, 'jump'],
-  ArrowDown: [1, 'swing'],
-  Enter: [1, 'swing'],
+export function readTouch(side: 0 | 1): RawControls {
+  const t = touch[side]
+  const tt = touchTapped[side]
+  return { ...t, swing: t.swing || tt.swing, jump: t.jump || tt.jump }
 }
 
-export function bindKeyboard() {
-  const set = (e: KeyboardEvent, on: boolean) => {
-    const k = KEYS[e.code]
-    if (!k) return
-    e.preventDefault()
-    controls[k[0]][k[1]] = on
-  }
-  addEventListener('keydown', (e) => set(e, true))
-  addEventListener('keyup', (e) => set(e, false))
-  addEventListener('blur', () => {
-    for (const c of controls) c.left = c.right = c.jump = c.swing = false
-  })
-}
-
-/** data-player="0|1" data-action="left|right|jump|swing" 버튼들 (여러 손가락 동시 입력 지원) */
-export function bindTouchButtons(root: HTMLElement) {
-  for (const btn of root.querySelectorAll<HTMLElement>('[data-action]')) {
-    const side = Number(btn.dataset.player) as 0 | 1
-    const action = btn.dataset.action as Action
-    const on = (e: PointerEvent) => {
+/** 터치 패드: [data-pad="0|1"] 안에 .stick(조이스틱), [data-btn="swing|jump"] */
+export function bindTouchPads(root: HTMLElement) {
+  for (const pad of root.querySelectorAll<HTMLElement>('[data-pad]')) {
+    const side = Number(pad.dataset.pad) as 0 | 1
+    const t = touch[side]
+    const stick = pad.querySelector<HTMLElement>('.stick')!
+    const knob = stick.querySelector<HTMLElement>('.knob')!
+    let id: number | null = null
+    let ox = 0
+    let oy = 0
+    const R = 46
+    stick.addEventListener('pointerdown', (e) => {
       e.preventDefault()
-      btn.setPointerCapture(e.pointerId)
-      controls[side][action] = true
-      btn.classList.add('down')
+      id = e.pointerId
+      stick.setPointerCapture(id)
+      const r = stick.getBoundingClientRect()
+      ox = r.left + r.width / 2
+      oy = r.top + r.height / 2
+      move(e)
+    })
+    const move = (e: PointerEvent) => {
+      if (e.pointerId !== id) return
+      let dx = e.clientX - ox
+      let dy = e.clientY - oy
+      const d = Math.hypot(dx, dy)
+      if (d > R) {
+        dx = (dx / d) * R
+        dy = (dy / d) * R
+      }
+      knob.style.transform = `translate(${dx}px, ${dy}px)`
+      t.mx = dx / R
+      t.my = -dy / R
     }
-    const off = () => {
-      controls[side][action] = false
-      btn.classList.remove('down')
+    const end = (e: PointerEvent) => {
+      if (e.pointerId !== id) return
+      id = null
+      t.mx = t.my = 0
+      knob.style.transform = ''
     }
-    btn.addEventListener('pointerdown', on)
-    btn.addEventListener('pointerup', off)
-    btn.addEventListener('pointercancel', off)
-    btn.addEventListener('lostpointercapture', off)
-    btn.addEventListener('contextmenu', (e) => e.preventDefault())
+    stick.addEventListener('pointermove', move)
+    stick.addEventListener('pointerup', end)
+    stick.addEventListener('pointercancel', end)
+
+    for (const btn of pad.querySelectorAll<HTMLElement>('[data-btn]')) {
+      const key = btn.dataset.btn as 'swing' | 'jump'
+      btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault()
+        btn.setPointerCapture(e.pointerId)
+        t[key] = true
+        touchTapped[side][key] = true
+        btn.classList.add('down')
+      })
+      const off = () => {
+        t[key] = false
+        btn.classList.remove('down')
+      }
+      btn.addEventListener('pointerup', off)
+      btn.addEventListener('pointercancel', off)
+      btn.addEventListener('lostpointercapture', off)
+    }
+  }
+}
+
+export function merge(a: RawControls, b: RawControls): RawControls {
+  return {
+    mx: Math.abs(a.mx) > Math.abs(b.mx) ? a.mx : b.mx,
+    my: Math.abs(a.my) > Math.abs(b.my) ? a.my : b.my,
+    jump: a.jump || b.jump,
+    swing: a.swing || b.swing,
   }
 }

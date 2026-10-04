@@ -1,0 +1,82 @@
+﻿<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#8fd3ff" />
+    <title>둘이서 배드민턴</title>
+    <meta name="description" content="한 화면에서 둘이 하는 배드민턴 게임. 키보드나 터치로!" />
+    <meta property="og:title" content="🏸 둘이서 배드민턴" />
+    <meta property="og:description" content="한 화면에서 둘이 하는 배드민턴. 11점 먼저 내면 승리!" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏸</text></svg>" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700;900&display=swap" rel="stylesheet" />
+    <script type="module" crossorigin src="./assets/classic-DR_euuu0.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/modulepreload-polyfill-P2Xu9kJm.js">
+    <link rel="stylesheet" crossorigin href="./assets/classic-C3Njnb3m.css">
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+
+    <!-- 점수판 -->
+    <div id="hud" class="hud">
+      <div class="score p1"><span class="name" id="n1">P1</span><b id="s0">0</b></div>
+      <div class="vs" id="hint">11점 먼저!</div>
+      <div class="score p2"><b id="s1">0</b><span class="name" id="n2">P2</span></div>
+    </div>
+
+    <!-- 터치 조작 (각자 화면 한쪽 끝) -->
+    <div id="touch" class="touch">
+      <div class="pad p1">
+        <button data-player="0" data-action="left">◀</button>
+        <button data-player="0" data-action="right">▶</button>
+        <button data-player="0" data-action="jump" class="act">점프</button>
+        <button data-player="0" data-action="swing" class="act hit">스윙</button>
+      </div>
+      <div class="pad p2">
+        <button data-player="1" data-action="swing" class="act hit">스윙</button>
+        <button data-player="1" data-action="jump" class="act">점프</button>
+        <button data-player="1" data-action="left">◀</button>
+        <button data-player="1" data-action="right">▶</button>
+      </div>
+    </div>
+
+    <!-- 시작 / 끝 화면 -->
+    <div id="overlay" class="overlay">
+      <div class="card">
+        <p class="emoji">🏸</p>
+        <h1 id="title">둘이서 배드민턴</h1>
+        <p id="subtitle" class="sub">한 화면에서 둘이 대결! 11점 먼저 내면 승리</p>
+
+        <div id="howto" class="howto">
+          <div class="who p1">
+            <b>P1 (왼쪽)</b>
+            <span><kbd>A</kbd><kbd>D</kbd> 이동</span>
+            <span><kbd>W</kbd> 점프</span>
+            <span><kbd>S</kbd> 스윙</span>
+          </div>
+          <div class="who p2">
+            <b>P2 (오른쪽)</b>
+            <span><kbd>←</kbd><kbd>→</kbd> 이동</span>
+            <span><kbd>↑</kbd> 점프</span>
+            <span><kbd>↓</kbd> 스윙</span>
+          </div>
+        </div>
+        <ul class="tips">
+          <li>스윙만 누르면 <b>높게 넘기기</b></li>
+          <li>앞으로 가면서 스윙 → <b>빠른 드라이브</b> · 뒤로 가면서 → <b>네트 앞 드롭</b></li>
+          <li>점프해서 높은 셔틀을 치면 <b>스매시!</b></li>
+        </ul>
+
+        <div class="starts">
+          <button id="start" class="start">👫 둘이서 하기</button>
+          <button id="start-cpu" class="start alt">🤖 컴퓨터랑 하기</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="rotate">📱 휴대폰을 <b>가로</b>로 돌려주세요</div>
+
+  </body>
+</html>

@@ -3,74 +3,136 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
-    <meta name="theme-color" content="#8fd3ff" />
-    <title>둘이서 배드민턴</title>
-    <meta name="description" content="한 화면에서 둘이 하는 배드민턴 게임. 키보드나 터치로!" />
-    <meta property="og:title" content="🏸 둘이서 배드민턴" />
-    <meta property="og:description" content="한 화면에서 둘이 하는 배드민턴. 11점 먼저 내면 승리!" />
+    <meta name="theme-color" content="#5ca8f2" />
+    <title>배드민턴 3D</title>
+    <meta name="description" content="내 얼굴로 하는 3D 배드민턴. 1인칭·3인칭·중계 시점, 둘이서 또는 컴퓨터와!" />
+    <meta property="og:title" content="🏸 배드민턴 3D" />
+    <meta property="og:description" content="내 얼굴로 하는 3D 배드민턴. 1인칭·3인칭·중계 시점, 둘이서 또는 컴퓨터와!" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏸</text></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700;900&display=swap" rel="stylesheet" />
-    <script type="module" crossorigin src="./assets/index-D0qU4pfv.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-C3Njnb3m.css">
+    <script type="module" crossorigin src="./assets/main-Dj8v57a_.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/modulepreload-polyfill-P2Xu9kJm.js">
+    <link rel="stylesheet" crossorigin href="./assets/main-3u0MU6Ac.css">
   </head>
-  <body>
-    <canvas id="game"></canvas>
+  <body class="solo">
+    <canvas id="c"></canvas>
+    <div id="split" class="split-line"></div>
 
     <!-- 점수판 -->
-    <div id="hud" class="hud">
-      <div class="score p1"><span class="name" id="n1">P1</span><b id="s0">0</b></div>
-      <div class="vs" id="hint">11점 먼저!</div>
-      <div class="score p2"><b id="s1">0</b><span class="name" id="n2">P2</span></div>
+    <div class="hud">
+      <div class="score p1"><span class="name" id="n0">P1</span><b id="s0">0</b></div>
+      <div class="hint" id="hint">11점 먼저!</div>
+      <div class="score p2"><b id="s1">0</b><span class="name" id="n1">P2</span></div>
     </div>
-
-    <!-- 터치 조작 (각자 화면 한쪽 끝) -->
-    <div id="touch" class="touch">
-      <div class="pad p1">
-        <button data-player="0" data-action="left">◀</button>
-        <button data-player="0" data-action="right">▶</button>
-        <button data-player="0" data-action="jump" class="act">점프</button>
-        <button data-player="0" data-action="swing" class="act hit">스윙</button>
-      </div>
-      <div class="pad p2">
-        <button data-player="1" data-action="swing" class="act hit">스윙</button>
-        <button data-player="1" data-action="jump" class="act">점프</button>
-        <button data-player="1" data-action="left">◀</button>
-        <button data-player="1" data-action="right">▶</button>
-      </div>
+    <div class="topbtns">
+      <button id="btn-view" title="시점 바꾸기 (V)">👁 <span id="view-label">3인칭</span></button>
+      <button id="btn-menu" title="메뉴 (Esc)">⏸</button>
     </div>
+    <div id="toasts" class="toasts"></div>
 
-    <!-- 시작 / 끝 화면 -->
-    <div id="overlay" class="overlay">
-      <div class="card">
-        <p class="emoji">🏸</p>
-        <h1 id="title">둘이서 배드민턴</h1>
-        <p id="subtitle" class="sub">한 화면에서 둘이 대결! 11점 먼저 내면 승리</p>
-
-        <div id="howto" class="howto">
-          <div class="who p1">
-            <b>P1 (왼쪽)</b>
-            <span><kbd>A</kbd><kbd>D</kbd> 이동</span>
-            <span><kbd>W</kbd> 점프</span>
-            <span><kbd>S</kbd> 스윙</span>
-          </div>
-          <div class="who p2">
-            <b>P2 (오른쪽)</b>
-            <span><kbd>←</kbd><kbd>→</kbd> 이동</span>
-            <span><kbd>↑</kbd> 점프</span>
-            <span><kbd>↓</kbd> 스윙</span>
-          </div>
+    <!-- 터치 조작 -->
+    <div id="pads" class="pads">
+      <div class="pad" data-pad="0">
+        <div class="stick"><div class="knob"></div></div>
+        <div class="btns">
+          <button data-btn="jump">점프</button>
+          <button data-btn="swing" class="swing">스윙</button>
         </div>
-        <ul class="tips">
-          <li>스윙만 누르면 <b>높게 넘기기</b></li>
-          <li>앞으로 가면서 스윙 → <b>빠른 드라이브</b> · 뒤로 가면서 → <b>네트 앞 드롭</b></li>
-          <li>점프해서 높은 셔틀을 치면 <b>스매시!</b></li>
-        </ul>
+      </div>
+      <div class="pad" data-pad="1">
+        <div class="stick"><div class="knob"></div></div>
+        <div class="btns">
+          <button data-btn="jump">점프</button>
+          <button data-btn="swing" class="swing">스윙</button>
+        </div>
+      </div>
+    </div>
 
-        <div class="starts">
-          <button id="start" class="start">👫 둘이서 하기</button>
-          <button id="start-cpu" class="start alt">🤖 컴퓨터랑 하기</button>
+    <!-- 설정 화면 -->
+    <div id="menu" class="overlay">
+      <div class="card">
+        <header>
+          <p class="emoji">🏸</p>
+          <h1>배드민턴 3D</h1>
+          <p class="sub">내 얼굴로 하는 배드민턴 · 11점 먼저 내면 승리</p>
+        </header>
+
+        <section>
+          <p class="label">누구랑 할까요?</p>
+          <div class="seg" data-setting="mode">
+            <button data-value="cpu">🤖 컴퓨터랑</button>
+            <button data-value="duo">👫 둘이서</button>
+          </div>
+        </section>
+
+        <section>
+          <p class="label">시점</p>
+          <div class="seg" data-setting="view">
+            <button data-value="third">🎮 3인칭</button>
+            <button data-value="first">👀 1인칭</button>
+            <button data-value="tv">📺 중계</button>
+          </div>
+          <p class="note" id="view-note"></p>
+        </section>
+
+        <section class="players">
+          <div class="pcard" data-player="0">
+            <p class="ptitle"><span class="dot"></span><b class="pname">P1</b></p>
+            <div class="face-row">
+              <canvas class="face" width="96" height="96"></canvas>
+              <div class="face-btns">
+                <label class="file">📷 얼굴 사진<input type="file" accept="image/*" hidden /></label>
+                <button class="reset-face" type="button">기본 얼굴</button>
+              </div>
+            </div>
+            <div class="seg small" data-look="gender">
+              <button data-value="m">👦 남자</button>
+              <button data-value="f">👧 여자</button>
+            </div>
+            <div class="swatches" data-look="shirt"></div>
+            <label class="check"><input type="checkbox" data-look="auto" /> 자동 스윙 (쉬움)</label>
+          </div>
+
+          <div class="pcard" data-player="1">
+            <p class="ptitle"><span class="dot"></span><b class="pname">P2</b></p>
+            <div class="face-row">
+              <canvas class="face" width="96" height="96"></canvas>
+              <div class="face-btns">
+                <label class="file">📷 얼굴 사진<input type="file" accept="image/*" hidden /></label>
+                <button class="reset-face" type="button">기본 얼굴</button>
+              </div>
+            </div>
+            <div class="seg small" data-look="gender">
+              <button data-value="m">👦 남자</button>
+              <button data-value="f">👧 여자</button>
+            </div>
+            <div class="swatches" data-look="shirt"></div>
+            <label class="check"><input type="checkbox" data-look="auto" /> 자동 스윙 (쉬움)</label>
+          </div>
+        </section>
+        <p class="privacy">얼굴 사진은 이 기기 안에서만 쓰여요. 어디에도 올라가지 않아요.</p>
+
+        <button id="start" class="start">시작하기</button>
+
+        <details class="keys">
+          <summary>⌨️ 조작법</summary>
+          <div id="keys-body"></div>
+        </details>
+        <a class="classic" href="./classic.html">2D 클래식 버전 →</a>
+      </div>
+    </div>
+
+    <!-- 끝 화면 -->
+    <div id="over" class="overlay hidden">
+      <div class="card small">
+        <p class="emoji">🏆</p>
+        <h1 id="over-title">P1 승리!</h1>
+        <p class="sub" id="over-score">11 : 7</p>
+        <div class="row">
+          <button id="again" class="start">다시 하기</button>
+          <button id="to-menu" class="start alt">설정으로</button>
         </div>
       </div>
     </div>

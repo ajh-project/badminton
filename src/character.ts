@@ -101,7 +101,7 @@ export class Character {
   private legR = new THREE.Group()
   private armL = new THREE.Group()
   private armR = new THREE.Group() // 라켓 든 팔
-  private racketArm: THREE.Object3D[] = [] // 1인칭에서 숨길 팔 (라켓은 남김)
+  private racketArm: THREE.Object3D[] = [] // 1인칭에서 숨길 팔·상체 (라켓은 남김)
   private torso = new THREE.Group()
   head = new THREE.Group()
   private faceTex: THREE.CanvasTexture
@@ -147,6 +147,7 @@ export class Character {
     const neck = capsule(0.055, 0.06, skin)
     neck.position.y = 0.52
     this.torso.add(chest, neck)
+    this.racketArm.push(chest, neck) // 1인칭에서 눈앞을 가리지 않게 같이 숨김
     this.body.add(this.torso)
 
     // 팔 (어깨에서 아래로)

@@ -16,9 +16,17 @@ const stats = await page.evaluate(async () => {
   let ahead = 0
   let seen = 0
   let shots = 0
+  // 시야가 얼마나 움직이는지 (도/초): 게임 시간 기준
+  let turned = 0
+  let prev = null
   const t0 = performance.now()
+  const g0 = m.time
   while (performance.now() - t0 < 20000) {
     await new Promise((r) => setTimeout(r, 50))
+    const d = new cam.position.constructor()
+    cam.getWorldDirection(d)
+    if (prev) turned += d.angleTo(prev)
+    prev = d.clone()
     const s = m.shuttle
     const p = m.players[0]
     if (!s.inPlay || (s.p.z - p.z) * p.facing < 0.6) continue
@@ -27,9 +35,11 @@ const stats = await page.evaluate(async () => {
     if (Math.abs(v.x) < 0.95 && Math.abs(v.y) < 0.95 && v.z < 1) seen++
     if (Math.abs(v.x) < 0.95 && Math.abs(v.y) < 0.95 && v.z < 1 && s.p.y > 3) shots++
   }
-  return { ahead, seen, highSeen: shots }
+  return { ahead, seen, highSeen: shots, degPerSec: ((turned * 180) / Math.PI / Math.max(0.1, m.time - g0)).toFixed(1) }
 })
-console.log(`auto-track: shuttle in front ${stats.ahead} samples, on screen ${stats.seen} (${((100 * stats.seen) / Math.max(1, stats.ahead)).toFixed(0)}%), high balls (>3m) seen ${stats.highSeen}`)
+console.log(
+  `auto-track: shuttle in front ${stats.ahead} samples, on screen ${stats.seen} (${((100 * stats.seen) / Math.max(1, stats.ahead)).toFixed(0)}%), high balls (>3m) seen ${stats.highSeen}, view movement ${stats.degPerSec}°/s`,
+)
 await page.screenshot({ path: 'shot-look-auto.png' })
 
 // 직접 조작: 시야를 오른쪽으로 0.8rad 돌리면 카메라가 따라 도는지

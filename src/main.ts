@@ -125,7 +125,9 @@ const camAim = [
 ]
 /** 직접 조작으로 더한 시야 (마우스·기울이기). 정면 기준 */
 const manualLook = { yaw: 0, pitch: 0 }
-const MAX_TURN = 4.5 // 자동 추적 최대 회전 속도 (rad/s, 멀미 방지)
+const MAX_TURN = 2.4 // 자동 추적 최대 회전 속도 (rad/s, 멀미 방지)
+const FOV_FIRST = 88 // 1인칭 세로 화각 (넓게: 높은 공과 양쪽 사이드라인이 보이게)
+const FOV_THIRD = 64
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
 const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a))
@@ -143,6 +145,9 @@ function desiredAim(side: Side, eye: THREE.Vector3, base: { x: number; y: number
   const p = match.players[side]
   const fy = fwdYaw(p.facing)
   const b = aimAt(eye, base)
+  let tracking = false
+  // 기준: 셔틀을 볼 때는 지금 보는 방향(가만히 있기), 아니면 정면
+  const cur = camAim[side]
   let yaw = wrapAngle(b.yaw - fy)
   let pitch = b.pitch
 
@@ -150,18 +155,22 @@ function desiredAim(side: Side, eye: THREE.Vector3, base: { x: number; y: number
     yaw += manualLook.yaw
     pitch += manualLook.pitch
   } else if (track > 0) {
-    // 자동 추적: 셔틀이 내 앞쪽에 있으면 셔틀을 봄
+    // 자동 추적 (실제 배드민턴처럼): 몸은 네트를 보고, 셔틀이 시야 가장자리로 가면 그만큼만 고개를 돌림
     const s = match.shuttle
     const ahead = (s.p.z - p.z) * p.facing
-    if (ahead > 0.25) {
-      const coming = s.lastHitter !== side || s.heldBy !== null // 나한테 오는 중이거나 서브 대기
-      const w = (coming ? 0.9 : 0.55) * track
-      const t = aimAt(eye, { x: s.p.x, y: Math.max(0.4, s.p.y), z: s.p.z })
-      yaw += wrapAngle(wrapAngle(t.yaw - fy) - yaw) * w
-      pitch += (t.pitch - pitch) * w
+    if (ahead > 0.3 && (s.inPlay || s.heldBy !== null)) {
+      const t = aimAt(eye, { x: s.p.x, y: Math.max(0.3, s.p.y), z: s.p.z })
+      const ty = wrapAngle(t.yaw - fy)
+      const cam = cams[side]
+      const halfV = (cam.fov * Math.PI) / 360
+      const halfH = Math.atan(Math.tan(halfV) * cam.aspect)
+      // 지금 보는 방향에서 셔틀이 화면 가운데 영역(track 비율) 안에 있으면 그대로, 벗어날 때만 그만큼 돌림
+      yaw = clamp(wrapAngle(cur.yaw - fy), ty - halfH * track, ty + halfH * track)
+      pitch = clamp(cur.pitch, t.pitch - halfV * track, t.pitch + halfV * track)
+      tracking = true
     }
   }
-  return { yaw: clamp(yaw, -1.35, 1.35) + fy, pitch: clamp(pitch, -0.6, 1.25) }
+  return { yaw: clamp(yaw, -1.35, 1.35) + fy, pitch: clamp(pitch, -0.6, 1.25), tracking }
 }
 
 function turnToward(side: Side, want: { yaw: number; pitch: number }, dt: number, rate: number) {
@@ -184,24 +193,26 @@ function updateCamera(side: Side, dt: number, view: View) {
   const f = p.facing
 
   if (view === 'first') {
-    cam.fov = 74
-    const eye = new THREE.Vector3(p.x, p.y + 1.66, p.z + f * 0.14)
-    // 기본 시선: 상대 코트 가운데 약간 위
-    const want = desiredAim(side, eye, { x: p.x * 0.4, y: 1.5, z: f * 6 }, 1)
-    turnToward(side, want, dt, settings.look === 'manual' ? 30 : 7)
+    cam.fov = FOV_FIRST
+    // 눈 위치를 머리 살짝 위로: 내 코트와 라켓까지 시야에 들어오게
+    const eye = new THREE.Vector3(p.x, p.y + 1.72, p.z - f * 0.05)
+    // 기본 시선: 상대 코트 가운데, 약간 아래를 내려다봄
+    const want = desiredAim(side, eye, { x: p.x * 0.35, y: 1.2, z: f * 6 }, 0.75)
+    // 셔틀을 따라갈 땐 보통 속도, 정면으로 돌아올 땐 천천히
+    turnToward(side, want, dt, settings.look === 'manual' ? 30 : want.tracking ? 4 : 1.2)
     cam.position.copy(eye)
     cam.lookAt(eye.clone().add(lookDir(camAim[side])))
   } else {
-    cam.fov = 58
-    const pos = new THREE.Vector3(p.x * 0.65, 2.5 + p.y * 0.4, p.z - f * 4.6)
-    const want = desiredAim(side, pos, { x: p.x * 0.3, y: 1.1, z: f * 3.2 }, 0.35)
+    cam.fov = FOV_THIRD
+    const pos = new THREE.Vector3(p.x * 0.6, 2.9 + p.y * 0.4, p.z - f * 5.3)
+    const want = desiredAim(side, pos, { x: p.x * 0.3, y: 1.0, z: f * 3.4 }, 0.8)
     if (settings.look === 'manual') {
       // 3인칭 직접 조작: 내 캐릭터를 중심으로 카메라가 돌아감
       const rel = pos.clone().sub(new THREE.Vector3(p.x, 0, p.z)).applyAxisAngle(new THREE.Vector3(0, 1, 0), manualLook.yaw)
       pos.set(p.x + rel.x, rel.y, p.z + rel.z)
     }
     cam.position.lerp(pos, Math.min(1, dt * 6))
-    turnToward(side, want, dt, settings.look === 'manual' ? 20 : 5)
+    turnToward(side, want, dt, settings.look === 'manual' ? 20 : want.tracking ? 4 : 1.5)
     cam.lookAt(cam.position.clone().add(lookDir(camAim[side])))
   }
   cam.updateProjectionMatrix()
@@ -210,7 +221,7 @@ function updateCamera(side: Side, dt: number, view: View) {
 function snapCameras() {
   for (const side of [0, 1] as Side[]) {
     const p = match.players[side]
-    cams[side].position.set(p.x * 0.65, 2.5, p.z - p.facing * 4.6)
+    cams[side].position.set(p.x * 0.6, 2.9, p.z - p.facing * 5.3)
     camAim[side] = { yaw: fwdYaw(p.facing), pitch: -0.15 }
   }
   recenterLook()

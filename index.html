@@ -19,9 +19,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700;900&display=swap" rel="stylesheet" />
-    <script type="module" crossorigin src="./assets/main-DqhmBexv.js"></script>
+    <script type="module" crossorigin src="./assets/main-C8jFqgkH.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/modulepreload-polyfill-P2Xu9kJm.js">
-    <link rel="stylesheet" crossorigin href="./assets/main-DGx0W9IA.css">
+    <link rel="stylesheet" crossorigin href="./assets/main-BKxxqfFH.css">
   </head>
   <body class="solo">
     <canvas id="c"></canvas>
@@ -35,6 +35,7 @@
     </div>
     <div class="topbtns">
       <button id="btn-view" title="시점 바꾸기 (V)">👁 <span id="view-label">3인칭</span></button>
+      <button id="btn-center" title="시야 정면으로 (C)">🎯</button>
       <button id="btn-full" title="전체 화면">⛶</button>
       <button id="btn-menu" title="메뉴 (Esc)">⏸</button>
     </div>
@@ -115,6 +116,11 @@
             <button data-value="tv">📺 중계</button>
           </div>
           <p class="note" id="view-note"></p>
+          <div class="seg small look-seg" data-setting="look">
+            <button data-value="auto">🎯 시야 자동 추적</button>
+            <button data-value="manual">🖐 시야 직접 조작</button>
+          </div>
+          <p class="note" id="look-note"></p>
         </section>
 
         <section class="players">

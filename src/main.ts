@@ -22,6 +22,8 @@ const $ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = 
 interface Settings {
   mode: Mode
   view: View
+  /** 시야: 자동 추적 / 직접 조작(마우스·기울이기) */
+  look: 'auto' | 'manual'
   looks: [LookBase, LookBase]
   auto: [boolean, boolean]
 }
@@ -29,6 +31,7 @@ interface Settings {
 const DEFAULTS: Settings = {
   mode: 'cpu',
   view: 'third',
+  look: 'auto',
   looks: [
     { gender: 'm', shirt: SHIRTS[0] },
     { gender: 'f', shirt: SHIRTS[1] },
@@ -115,44 +118,147 @@ buildCharacters()
 
 // ---------- 카메라 ----------
 
-const lookTargets = [new THREE.Vector3(), new THREE.Vector3()]
+// 시야 각도: yaw = 좌우(라디안, atan2(x, z) 기준), pitch = 위아래 (+가 위)
+const camAim = [
+  { yaw: 0, pitch: 0 },
+  { yaw: Math.PI, pitch: 0 },
+]
+/** 직접 조작으로 더한 시야 (마우스·기울이기). 정면 기준 */
+const manualLook = { yaw: 0, pitch: 0 }
+const MAX_TURN = 4.5 // 자동 추적 최대 회전 속도 (rad/s, 멀미 방지)
+
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
+const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a))
+const fwdYaw = (f: 1 | -1) => (f === 1 ? 0 : Math.PI)
+
+function aimAt(from: THREE.Vector3, to: { x: number; y: number; z: number }) {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const dz = to.z - from.z
+  return { yaw: Math.atan2(dx, dz), pitch: Math.atan2(dy, Math.hypot(dx, dz)) }
+}
+
+/** 이 선수가 지금 보고 싶은 시야 (정면 기준 상대 각도) */
+function desiredAim(side: Side, eye: THREE.Vector3, base: { x: number; y: number; z: number }, track: number) {
+  const p = match.players[side]
+  const fy = fwdYaw(p.facing)
+  const b = aimAt(eye, base)
+  let yaw = wrapAngle(b.yaw - fy)
+  let pitch = b.pitch
+
+  if (settings.look === 'manual') {
+    yaw += manualLook.yaw
+    pitch += manualLook.pitch
+  } else if (track > 0) {
+    // 자동 추적: 셔틀이 내 앞쪽에 있으면 셔틀을 봄
+    const s = match.shuttle
+    const ahead = (s.p.z - p.z) * p.facing
+    if (ahead > 0.25) {
+      const coming = s.lastHitter !== side || s.heldBy !== null // 나한테 오는 중이거나 서브 대기
+      const w = (coming ? 0.9 : 0.55) * track
+      const t = aimAt(eye, { x: s.p.x, y: Math.max(0.4, s.p.y), z: s.p.z })
+      yaw += wrapAngle(wrapAngle(t.yaw - fy) - yaw) * w
+      pitch += (t.pitch - pitch) * w
+    }
+  }
+  return { yaw: clamp(yaw, -1.35, 1.35) + fy, pitch: clamp(pitch, -0.6, 1.25) }
+}
+
+function turnToward(side: Side, want: { yaw: number; pitch: number }, dt: number, rate: number) {
+  const a = camAim[side]
+  const dy = wrapAngle(want.yaw - a.yaw)
+  const dp = want.pitch - a.pitch
+  const k = Math.min(1, dt * rate)
+  const limit = settings.look === 'manual' ? Infinity : MAX_TURN * dt
+  a.yaw = wrapAngle(a.yaw + clamp(dy * k, -limit, limit))
+  a.pitch += clamp(dp * k, -limit, limit)
+}
+
+function lookDir(a: { yaw: number; pitch: number }) {
+  return new THREE.Vector3(Math.sin(a.yaw) * Math.cos(a.pitch), Math.sin(a.pitch), Math.cos(a.yaw) * Math.cos(a.pitch))
+}
 
 function updateCamera(side: Side, dt: number, view: View) {
   const cam = cams[side]
   const p = match.players[side]
   const f = p.facing
-  const s = match.shuttle.p
-  const pos = new THREE.Vector3()
-  const look = new THREE.Vector3()
 
   if (view === 'first') {
     cam.fov = 74
-    pos.set(p.x, p.y + 1.66, p.z + f * 0.14)
-    // 기본은 상대 코트를 보고, 앞쪽에 있는 셔틀을 고개로 따라감
-    look.set(p.x * 0.4, 1.5, f * 6)
-    const ahead = (s.z - p.z) * f
-    if (ahead > 0.6) {
-      const w = Math.min(0.75, ahead / 3)
-      look.lerp(new THREE.Vector3(s.x, Math.max(0.6, s.y), s.z), w)
-    }
+    const eye = new THREE.Vector3(p.x, p.y + 1.66, p.z + f * 0.14)
+    // 기본 시선: 상대 코트 가운데 약간 위
+    const want = desiredAim(side, eye, { x: p.x * 0.4, y: 1.5, z: f * 6 }, 1)
+    turnToward(side, want, dt, settings.look === 'manual' ? 30 : 7)
+    cam.position.copy(eye)
+    cam.lookAt(eye.clone().add(lookDir(camAim[side])))
   } else {
     cam.fov = 58
-    pos.set(p.x * 0.65, 2.5 + p.y * 0.4, p.z - f * 4.6)
-    look.set(p.x * 0.3, 1.1, f * 3.2)
+    const pos = new THREE.Vector3(p.x * 0.65, 2.5 + p.y * 0.4, p.z - f * 4.6)
+    const want = desiredAim(side, pos, { x: p.x * 0.3, y: 1.1, z: f * 3.2 }, 0.35)
+    if (settings.look === 'manual') {
+      // 3인칭 직접 조작: 내 캐릭터를 중심으로 카메라가 돌아감
+      const rel = pos.clone().sub(new THREE.Vector3(p.x, 0, p.z)).applyAxisAngle(new THREE.Vector3(0, 1, 0), manualLook.yaw)
+      pos.set(p.x + rel.x, rel.y, p.z + rel.z)
+    }
+    cam.position.lerp(pos, Math.min(1, dt * 6))
+    turnToward(side, want, dt, settings.look === 'manual' ? 20 : 5)
+    cam.lookAt(cam.position.clone().add(lookDir(camAim[side])))
   }
   cam.updateProjectionMatrix()
-  const k = Math.min(1, dt * (view === 'first' ? 18 : 6))
-  cam.position.lerp(pos, k)
-  lookTargets[side].lerp(look, Math.min(1, dt * (view === 'first' ? 7 : 6)))
-  cam.lookAt(lookTargets[side])
 }
 
 function snapCameras() {
   for (const side of [0, 1] as Side[]) {
     const p = match.players[side]
     cams[side].position.set(p.x * 0.65, 2.5, p.z - p.facing * 4.6)
-    lookTargets[side].set(0, 1.1, p.facing * 3.2)
+    camAim[side] = { yaw: fwdYaw(p.facing), pitch: -0.15 }
   }
+  recenterLook()
+}
+
+// ---------- 직접 조작 시야 (PC 마우스 / 폰 기울이기) ----------
+
+let gyroBase: { a: number; b: number; g: number } | null = null
+
+function recenterLook() {
+  manualLook.yaw = manualLook.pitch = 0
+  gyroBase = null
+}
+
+// PC: 화면을 누르면 마우스 고정 → 마우스로 시야 (Esc로 해제)
+addEventListener('mousemove', (e) => {
+  if (document.pointerLockElement !== canvas || settings.look !== 'manual') return
+  manualLook.yaw = clamp(manualLook.yaw - e.movementX * 0.0028, -1.35, 1.35)
+  manualLook.pitch = clamp(manualLook.pitch - e.movementY * 0.0028, -0.6, 1.1)
+})
+function lockMouse() {
+  if (isTouch || settings.look !== 'manual' || document.pointerLockElement) return
+  canvas.requestPointerLock?.()?.catch?.(() => {})
+}
+
+// 폰: 기울이기 (처음 각도를 정면으로)
+const wrapDeg = (d: number) => ((((d + 180) % 360) + 360) % 360) - 180
+addEventListener('deviceorientation', (e) => {
+  if (!isTouch || settings.look !== 'manual' || e.alpha === null || e.beta === null || e.gamma === null) return
+  if (!gyroBase) {
+    gyroBase = { a: e.alpha, b: e.beta, g: e.gamma }
+    return
+  }
+  const angle = screen.orientation?.angle ?? 0
+  // 가로로 들었을 때: 좌우로 돌리면 alpha, 앞뒤로 기울이면 gamma
+  const dYaw = wrapDeg(e.alpha - gyroBase.a)
+  const dPitch = angle === 90 ? -(e.gamma - gyroBase.g) : angle === 270 ? e.gamma - gyroBase.g : e.beta - gyroBase.b
+  manualLook.yaw = clamp((dYaw * Math.PI) / 180, -1.35, 1.35)
+  manualLook.pitch = clamp((dPitch * Math.PI) / 180, -0.6, 1.1)
+})
+
+/** 아이폰은 기울기 센서 권한을 사용자 터치 때 요청해야 함 */
+let gyroAsked = false
+function askGyro() {
+  if (gyroAsked || !isTouch || settings.look !== 'manual') return
+  gyroAsked = true
+  const DO = (window as unknown as { DeviceOrientationEvent?: { requestPermission?: () => Promise<string> } }).DeviceOrientationEvent
+  DO?.requestPermission?.().catch(() => {})
 }
 
 // ---------- 소리 (짧은 잡음으로 만든 타격음) ----------
@@ -215,10 +321,12 @@ function toggleFullscreen() {
   } else if (isIOS) alert('아이폰은 공유 버튼 → "홈 화면에 추가"로 열면 전체 화면으로 할 수 있어요.')
 }
 // 게임 중 화면을 처음 만지면 전체 화면 + 소리 켜기 (온라인 참가자는 시작 버튼을 누르지 않으므로)
-addEventListener('pointerdown', () => {
+addEventListener('pointerdown', (e) => {
   if (!document.body.classList.contains('playing')) return
   wakeAudio()
   enterFullscreen()
+  askGyro()
+  if (e.target === canvas) lockMouse()
 })
 if (!document.fullscreenEnabled) $('#btn-full').style.display = isIOS ? '' : 'none'
 
@@ -453,7 +561,7 @@ function drawFace(cv: HTMLCanvasElement, face: HTMLCanvasElement | null, gender:
 function syncMenu() {
   document.body.classList.toggle('mode-online', isOnline())
   for (const seg of document.querySelectorAll<HTMLElement>('.seg[data-setting]')) {
-    const key = seg.dataset.setting as 'mode' | 'view'
+    const key = seg.dataset.setting as 'mode' | 'view' | 'look'
     for (const b of seg.querySelectorAll<HTMLButtonElement>('button')) b.classList.toggle('on', b.dataset.value === settings[key])
   }
   for (const card of document.querySelectorAll<HTMLElement>('.pcard')) {
@@ -505,6 +613,15 @@ function syncMenu() {
         : settings.view === 'first'
           ? '내 눈높이에서 봐요. 셔틀 그림자를 보고 위치를 잡으세요!'
           : '내 캐릭터 뒤에서 봐요.'
+  $('#look-note').textContent =
+    settings.view === 'tv'
+      ? ''
+      : settings.look === 'auto'
+        ? '고개가 셔틀을 알아서 따라가요.'
+        : isTouch
+          ? '폰을 기울이면 시야가 돌아가요. 🎯 버튼으로 정면 맞추기'
+          : '게임 화면을 클릭하면 마우스로 시야를 돌려요 (Esc로 해제, C로 정면)'
+  document.body.classList.toggle('view-tv', settings.view === 'tv')
   $('#keys-body').innerHTML =
     settings.mode !== 'duo'
       ? `<table><tr><td>이동</td><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 또는 방향키</td></tr>
@@ -660,6 +777,10 @@ function bindMenu() {
   $('#btn-menu').addEventListener('click', () => openMenu())
   $('#btn-view').addEventListener('click', cycleView)
   $('#btn-full').addEventListener('click', toggleFullscreen)
+  $('#btn-center').addEventListener('click', () => {
+    recenterLook()
+    toast('정면')
+  })
 }
 
 function applyLayout() {
@@ -669,6 +790,9 @@ function applyLayout() {
   document.body.classList.toggle('solo', settings.mode !== 'duo')
   document.body.classList.toggle('vs-cpu', settings.mode !== 'duo')
   $('#view-label').textContent = VIEW_NAME[settings.view]
+  document.body.classList.toggle('look-manual', settings.look === 'manual' && settings.view !== 'tv')
+  document.body.classList.toggle('view-tv', settings.view === 'tv')
+  if (settings.look !== 'manual' && document.pointerLockElement) document.exitPointerLock()
   $('#n0').textContent = nameOf(0)
   $('#n1').textContent = nameOf(1)
   placeTv()
@@ -757,6 +881,7 @@ syncMenu()
 
 bindKeyboard((code) => {
   if (code === 'KeyV' && document.body.classList.contains('playing')) cycleView()
+  if (code === 'KeyC' && document.body.classList.contains('playing')) recenterLook()
   if (code === 'Escape') {
     if (document.body.classList.contains('playing')) openMenu()
     else if (!$('#menu').classList.contains('hidden') && !isOnline()) startGame()
@@ -805,7 +930,7 @@ function render() {
     // 중계 화면이 좁으면 코트가 다 보이게 화각을 넓힘
     if (pass.cam === tvCam) tvCam.fov = Math.min(75, 46 * Math.max(1, (16 / 9) / (pass.w / h)) ** 0.8)
     pass.cam.updateProjectionMatrix()
-    if (chars) for (const [i, c] of chars.entries()) c.setHeadVisible(!(view === 'first' && pass.side === i))
+    if (chars) for (const [i, c] of chars.entries()) c.setFirstPerson(view === 'first' && pass.side === i)
     renderer.setViewport(pass.x, 0, pass.w, h)
     renderer.setScissor(pass.x, 0, pass.w, h)
     renderer.render(scene, pass.cam)
@@ -869,4 +994,5 @@ function frame(now: number) {
 requestAnimationFrame(frame)
 
 // 개발 중 디버깅용
-if (import.meta.env.DEV) Object.assign(window, { __match: match, __settings: settings, __cams: cams, __tv: tvCam, __online: online })
+if (import.meta.env.DEV)
+  Object.assign(window, { __match: match, __settings: settings, __cams: cams, __tv: tvCam, __online: online, __look: manualLook })

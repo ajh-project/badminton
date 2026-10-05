@@ -101,6 +101,7 @@ export class Character {
   private legR = new THREE.Group()
   private armL = new THREE.Group()
   private armR = new THREE.Group() // 라켓 든 팔
+  private racketArm: THREE.Object3D[] = [] // 1인칭에서 숨길 팔 (라켓은 남김)
   private torso = new THREE.Group()
   head = new THREE.Group()
   private faceTex: THREE.CanvasTexture
@@ -160,6 +161,7 @@ export class Character {
       fore.position.y = -0.32
       arm.add(sleeve, fore)
       this.torso.add(arm)
+      if (arm === this.armR) this.racketArm.push(sleeve, fore)
     }
     this.armR.add(this.makeRacket(look.shirt))
 
@@ -241,9 +243,10 @@ export class Character {
     this.faceTex.needsUpdate = true
   }
 
-  /** 1인칭 시점에서 내 머리가 카메라를 가리지 않게 */
-  setHeadVisible(v: boolean) {
-    this.head.visible = v
+  /** 1인칭 시점: 내 머리와 라켓 든 팔은 숨기고 라켓만 보이게 (화면을 가리지 않게) */
+  setFirstPerson(on: boolean) {
+    this.head.visible = !on
+    for (const o of this.racketArm) o.visible = !on
   }
 
   update(p: Player, dt: number, swingTime: number) {

@@ -138,6 +138,20 @@ button {
   box-shadow: 0 4px 14px rgba(20, 60, 100, 0.18);
 }
 
+/* 시야 정면 맞추기 버튼은 직접 조작일 때만 */
+#btn-center {
+  display: none;
+}
+.look-manual #btn-center {
+  display: block;
+}
+.look-seg {
+  margin-top: 8px;
+}
+.view-tv .look-seg {
+  display: none;
+}
+
 /* 샷 이름, 득점 알림 */
 .toasts {
   position: fixed;

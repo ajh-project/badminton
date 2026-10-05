@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import QRCode from 'qrcode'
 import { Character, photoToFace, type Gender, type Look } from './character'
 import { bindKeyboard, bindMouseSwing, bindTouchPads, clearTaps, merge, readKeyboard, readTouch } from './input'
-import { WIN_SCORE, newMatch, noControls, startMatch, step, type Controls, type GameEvent, type Match, type Side } from './match'
+import { LONG_SERVE_HOLD, WIN_SCORE, newMatch, noControls, startMatch, step, type Controls, type GameEvent, type Match, type Side } from './match'
 import { Online, joinLink } from './net'
 import { ShuttleView, buildWorld } from './world'
 
@@ -224,7 +224,7 @@ if (!document.fullscreenEnabled) $('#btn-full').style.display = isIOS ? '' : 'no
 
 // ---------- 화면 표시 ----------
 
-const SHOT_TEXT: Record<string, string> = { smash: 'SMASH!', drop: '드롭', drive: '드라이브' }
+const SHOT_TEXT: Record<string, string> = { smash: 'SMASH!', drop: '드롭', drive: '드라이브', serveShort: '숏서브', serveLong: '롱서브' }
 
 function toast(text: string, color = '#fff', side: Side | null = null) {
   const el = document.createElement('div')
@@ -266,9 +266,16 @@ function updateHud() {
   const hint = $('#hint')
   if (match.phase === 'serve') {
     const server = match.server
+    const p = match.players[server]
     const mine = settings.mode === 'duo' || server === me
-    const auto = isOnline() ? settings.auto[0] : settings.auto[server]
-    hint.textContent = `${nameOf(server)} 서브${mine && !auto ? ' (스윙)' : ''}`
+    if (mine && p.serveCharge >= 0) {
+      // 누르는 동안 게이지: 다 차면 롱서브
+      const k = Math.min(1, p.serveCharge / LONG_SERVE_HOLD)
+      const filled = Math.round(k * 5)
+      hint.textContent = `${'■'.repeat(filled)}${'□'.repeat(5 - filled)} ${k >= 1 ? '롱서브!' : '숏서브'}`
+    } else if (mine) {
+      hint.textContent = `${nameOf(server)} 서브 · 탁=숏 꾹=롱`
+    } else hint.textContent = `${nameOf(server)} 서브`
   } else if (match.players.some((p) => p.score === WIN_SCORE - 1) && match.phase !== 'over') {
     hint.textContent = '매치 포인트!'
   } else hint.textContent = `${WIN_SCORE}점 먼저!`
@@ -365,7 +372,11 @@ function applySnapshot(msg: any) {
   const phase = msg.ph as Match['phase']
   // 서브 준비·득점 중에는 방장이 정한 위치로 맞춤
   if (phase === 'serve' || phase === 'point') Object.assign(p1, { x: mine[0], z: mine[1], y: mine[2] })
-  if (phase === 'serve' && match.phase !== 'serve') Object.assign(p0, { x, z, y })
+  if (phase === 'serve' && match.phase !== 'serve') {
+    Object.assign(p0, { x, z, y })
+    // 새 서브 준비: 내 스윙·서브 게이지 초기화 (방장 쪽 setupServe와 맞춤)
+    Object.assign(p1, { swing: 0, swingHit: false, serveCharge: -1, serveKind: null })
+  }
   const s = match.shuttle
   const [sx, sy, sz, svx, svy, svz, held, inPlay, last] = msg.sh
   s.p = { x: sx, y: sy, z: sz }

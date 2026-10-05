@@ -10,7 +10,10 @@ const SWING_TIME = 0.32
 const EYE = 1.62
 
 export type Side = 0 | 1
-export type ShotKind = 'clear' | 'drop' | 'drive' | 'smash' | 'serve'
+export type ShotKind = 'clear' | 'drop' | 'drive' | 'smash' | 'serveShort' | 'serveLong'
+
+/** 서브 버튼을 이 시간(초) 이상 누르면 롱서브 */
+export const LONG_SERVE_HOLD = 0.3
 
 /** 선수 기준 조작: mz>0 = 네트 쪽(앞), mx>0 = 오른쪽 */
 export interface Controls {
@@ -39,6 +42,9 @@ export interface Player {
   score: number
   autoSwing: boolean
   isCpu: boolean
+  /** 서브 버튼을 누르고 있는 시간 (-1이면 안 누름) */
+  serveCharge: number
+  serveKind: 'short' | 'long' | null
 }
 
 export interface Shuttle {
@@ -93,6 +99,8 @@ function makePlayer(side: Side): Player {
     score: 0,
     autoSwing: false,
     isCpu: false,
+    serveCharge: -1,
+    serveKind: null,
   }
 }
 
@@ -143,6 +151,9 @@ function setupServe(m: Match) {
   for (const p of m.players) {
     p.y = p.vy = p.vx = p.vz = 0
     p.swing = 0
+    p.swingHit = false
+    p.serveCharge = -1
+    p.serveKind = null
   }
   const s = m.shuttle
   s.heldBy = m.server
@@ -196,8 +207,13 @@ function shoot(m: Match, p: Player, c: Controls, kind: ShotKind) {
   const from = { ...s.p }
   let v: V3
   switch (kind) {
-    case 'serve':
-      v = solveClearingNet(from, { x: -from.x * 0.8 + rand(-0.3, 0.3), z: depth(rand(3.0, 4.6)) }, 48, 0.4)
+    case 'serveShort':
+      // 네트 바로 위로 낮게 → 상대 숏 서비스 라인 근처
+      v = solveClearingNet(from, { x: -from.x * 0.7 + rand(-0.2, 0.2), z: depth(rand(2.15, 2.8)) }, 12, 0.1)
+      break
+    case 'serveLong':
+      // 높이 띄워서 상대 코트 맨 뒤로
+      v = solveClearingNet(from, { x: -from.x * 0.8 + rand(-0.3, 0.3), z: depth(rand(5.3, 6.4)) }, 56, 0.6)
       break
     case 'smash': {
       const target = { x: aimX + rand(-err, err), z: depth(rand(2.4, 4.6)) }
@@ -252,7 +268,7 @@ export function step(m: Match, dt: number, input: [Controls, Controls]) {
     const locked = m.phase === 'point' || m.phase === 'serve' // 서브 전에는 제자리
     if (m.external[p.side]) {
       // 위치는 네트워크로 받음. 스윙만 처리
-      swingLogic(m, p, c)
+      handleSwing(m, p, c)
       continue
     }
     // 이동 (선수 기준 → 월드)
@@ -282,7 +298,7 @@ export function step(m: Match, dt: number, input: [Controls, Controls]) {
     p.y = Math.max(0, p.y + p.vy * dt)
     if (p.y === 0 && p.vy < 0) p.vy = 0
 
-    swingLogic(m, p, c)
+    handleSwing(m, p, c)
     p.prevJump = c.jump
   }
 
@@ -306,7 +322,9 @@ export function step(m: Match, dt: number, input: [Controls, Controls]) {
     m.timer += dt
     const p = m.players[m.server]
     if (p.swing > 0 && !p.swingHit && p.swing < SWING_TIME * 0.55) {
-      shoot(m, p, controls[p.side], 'serve')
+      // 사람은 누른 길이로 정해짐, 컴퓨터는 섞어서
+      const kind = p.serveKind ?? (Math.random() < 0.55 ? 'short' : 'long')
+      shoot(m, p, controls[p.side], kind === 'long' ? 'serveLong' : 'serveShort')
       m.phase = 'rally'
       m.events.push({ kind: 'serve', side: p.side })
     }
@@ -366,6 +384,31 @@ export function step(m: Match, dt: number, input: [Controls, Controls]) {
   }
 }
 
+/** 사람이 서브할 때는 누르는 길이로 숏/롱 서브, 그 외에는 보통 스윙 */
+function handleSwing(m: Match, p: Player, c: Controls) {
+  if (m.phase === 'serve' && p.side === m.server && !p.isCpu) serveInput(p, c)
+  else swingLogic(m, p, c)
+}
+
+function serveInput(p: Player, c: Controls) {
+  if (p.swing > 0 || p.swingHit) {
+    // 이미 휘두르는 중
+    p.swing = Math.max(0, p.swing - stepDt)
+  } else if (c.swing && !p.prevSwing) {
+    p.serveCharge = 0 // 누르기 시작
+  } else if (c.swing && p.serveCharge >= 0) {
+    p.serveCharge = Math.min(1, p.serveCharge + stepDt)
+  } else if (!c.swing && p.serveCharge >= 0) {
+    // 떼는 순간 서브 종류가 정해지고 스윙
+    p.serveKind = p.serveCharge >= LONG_SERVE_HOLD ? 'long' : 'short'
+    p.serveCharge = -1
+    p.swing = SWING_TIME
+    p.swingHit = false
+    p.swingOver = false
+  }
+  p.prevSwing = c.swing
+}
+
 function swingLogic(m: Match, p: Player, c: Controls) {
   if (m.phase !== 'point' && c.swing && !p.prevSwing && p.swing <= 0) {
     p.swing = SWING_TIME
@@ -402,7 +445,7 @@ function incoming(m: Match, p: Player) {
 function withAutoSwing(m: Match, p: Player, c: Controls): Controls {
   if (!p.autoSwing) return c
   const out = { ...c }
-  if (m.phase === 'serve' && m.server === p.side && m.timer > 1.2 && !c.swing) out.swing = Math.floor(m.time * 3) % 2 === 0
+  // 서브는 자동으로 하지 않음 (사람이 직접 짧게/길게 눌러서)
   if (m.phase !== 'rally') return out
   const s = m.shuttle
   if (s.lastHitter !== p.side && s.inPlay) {

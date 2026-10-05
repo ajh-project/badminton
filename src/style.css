@@ -26,10 +26,12 @@ body {
   touch-action: none;
 }
 
+/* 크기는 스크립트가 실제 화면 크기(px)로 맞춤. vw/dvh는 폰 주소창 때문에 어긋나서 쓰지 않음 */
 canvas#c {
   display: block;
-  width: 100vw;
-  height: 100dvh;
+  position: fixed;
+  left: 0;
+  top: 0;
 }
 
 button {
@@ -241,8 +243,8 @@ button {
   width: 128px;
   height: 128px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.22);
-  border: 2px solid rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.14);
+  border: 2px solid rgba(255, 255, 255, 0.45);
   pointer-events: auto;
   touch-action: none;
 }

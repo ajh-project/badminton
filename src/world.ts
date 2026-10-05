@@ -1,9 +1,9 @@
-// 배경: 하늘, 공원, 코트(실제 규격 선), 네트, 셔틀콕
+﻿// 배경: 하늘, 공원, 코트(실제 규격 선), 네트, 셔틀콕
 
 import * as THREE from 'three'
 import { COURT } from './physics'
 
-export function buildWorld(scene: THREE.Scene) {
+export function buildWorld(scene: THREE.Scene, lowPower = false) {
   // 하늘 (위는 파랗고 아래는 밝게)
   const sky = new THREE.Mesh(
     new THREE.SphereGeometry(120, 32, 16),
@@ -24,7 +24,7 @@ export function buildWorld(scene: THREE.Scene) {
   const sun = new THREE.DirectionalLight('#fff4e0', 2.2)
   sun.position.set(-8, 16, -6)
   sun.castShadow = true
-  sun.shadow.mapSize.set(2048, 2048)
+  sun.shadow.mapSize.setScalar(lowPower ? 1024 : 2048)
   const sc = sun.shadow.camera
   sc.left = -10
   sc.right = 10
@@ -151,15 +151,39 @@ function mulberry(seed: number) {
   }
 }
 
-/** 셔틀콕: 코르크가 날아가는 방향을 향함. 잘 보이게 실제보다 2배 크게 */
+/** 동그란 빛 텍스처 (셔틀 강조·꼬리용) */
+function glowTexture() {
+  const c = document.createElement('canvas')
+  c.width = c.height = 64
+  const g = c.getContext('2d')!
+  // 흰 점 + 주황 테두리: 밝은 하늘과 초록 코트 어디서든 눈에 띄게
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32)
+  grad.addColorStop(0, 'rgba(255,255,255,1)')
+  grad.addColorStop(0.32, 'rgba(255,255,255,1)')
+  grad.addColorStop(0.42, 'rgba(255,110,20,1)')
+  grad.addColorStop(0.6, 'rgba(255,110,20,0.55)')
+  grad.addColorStop(1, 'rgba(255,110,20,0)')
+  g.fillStyle = grad
+  g.fillRect(0, 0, 64, 64)
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.SRGBColorSpace
+  return t
+}
+
+/**
+ * 셔틀콕: 코르크가 날아가는 방향을 향함.
+ * 폰 작은 화면에서도 보이게: 모델 3배 크기 + 멀어도 크기가 일정한 빛 표시 + 점 꼬리 + 떨어질 곳 표시
+ */
 export class ShuttleView {
   group = new THREE.Group()
   private shadow: THREE.Mesh
-  private trail: THREE.Line
+  private glow: THREE.Sprite
+  private trail: THREE.Sprite[] = []
   private trailPts: THREE.Vector3[] = []
+  private landRing: THREE.Mesh
 
   constructor(scene: THREE.Scene) {
-    const S = 2
+    const S = 3
     const cork = new THREE.Mesh(
       new THREE.SphereGeometry(0.014 * S, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2),
       new THREE.MeshStandardMaterial({ color: '#fff6ea', roughness: 0.5 }),
@@ -170,7 +194,7 @@ export class ShuttleView {
     band.position.z = -0.004 * S
     const skirt = new THREE.Mesh(
       new THREE.CylinderGeometry(0.014 * S, 0.034 * S, 0.07 * S, 16, 1, true),
-      new THREE.MeshStandardMaterial({ color: '#ffffff', side: THREE.DoubleSide, transparent: true, opacity: 0.92 }),
+      new THREE.MeshStandardMaterial({ color: '#ffffff', side: THREE.DoubleSide, transparent: true, opacity: 0.95, emissive: '#ffffff', emissiveIntensity: 0.25 }),
     )
     skirt.rotation.x = Math.PI / 2 // 좁은 쪽이 코르크(앞), 넓은 쪽이 뒤
     skirt.position.z = -0.042 * S
@@ -178,31 +202,67 @@ export class ShuttleView {
     this.group.add(cork, band, skirt)
     scene.add(this.group)
 
+    // 멀리 있어도 화면에서 크기가 일정한 빛 (작은 폰 화면에서 셔틀 찾기용)
+    const tex = glowTexture()
+    this.glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, sizeAttenuation: false, depthWrite: false, transparent: true }))
+    this.glow.scale.setScalar(0.08)
+    this.glow.renderOrder = 2
+    scene.add(this.glow)
+
+    // 점 꼬리 (선보다 폰에서 잘 보임)
+    for (let i = 0; i < 12; i++) {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, sizeAttenuation: false, depthWrite: false, transparent: true }))
+      s.visible = false
+      scene.add(s)
+      this.trail.push(s)
+    }
+
     // 바닥 그림자 (원근감을 잡는 데 중요)
     this.shadow = new THREE.Mesh(
-      new THREE.CircleGeometry(0.09, 20),
-      new THREE.MeshBasicMaterial({ color: '#0b2a14', transparent: true, opacity: 0.35, depthWrite: false }),
+      new THREE.CircleGeometry(0.13, 24),
+      new THREE.MeshBasicMaterial({ color: '#06210f', transparent: true, opacity: 0.5, depthWrite: false }),
     )
     this.shadow.rotation.x = -Math.PI / 2
     scene.add(this.shadow)
 
-    this.trail = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55 }))
-    scene.add(this.trail)
+    // 떨어질 곳 표시 (노란 고리)
+    this.landRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.22, 0.3, 32),
+      new THREE.MeshBasicMaterial({ color: '#ffe14d', transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide }),
+    )
+    this.landRing.rotation.x = -Math.PI / 2
+    this.landRing.visible = false
+    scene.add(this.landRing)
   }
 
-  update(p: { x: number; y: number; z: number }, v: { x: number; y: number; z: number }, flying: boolean) {
+  /** landing: 떨어질 예상 지점 (없으면 표시 안 함) */
+  update(p: { x: number; y: number; z: number }, v: { x: number; y: number; z: number }, flying: boolean, landing: { x: number; z: number } | null = null, t = 0) {
     this.group.position.set(p.x, p.y, p.z)
     const sp = Math.hypot(v.x, v.y, v.z)
     if (flying && sp > 0.5) this.group.lookAt(p.x + v.x, p.y + v.y, p.z + v.z)
     else this.group.rotation.set(Math.PI / 2, 0, 0) // 들고 있을 땐 코르크가 아래로
+    this.glow.position.set(p.x, p.y, p.z)
     this.shadow.position.set(p.x, 0.006, p.z)
-    const k = Math.max(0.4, 1 - p.y / 8)
-    this.shadow.scale.setScalar(k)
+    this.shadow.scale.setScalar(Math.max(0.5, 1 - p.y / 10))
 
     if (flying) {
       this.trailPts.push(new THREE.Vector3(p.x, p.y, p.z))
-      if (this.trailPts.length > 18) this.trailPts.shift()
+      if (this.trailPts.length > this.trail.length * 2) this.trailPts.shift()
     } else this.trailPts = []
-    this.trail.geometry.setFromPoints(this.trailPts)
+    this.trail.forEach((s, i) => {
+      const pt = this.trailPts[this.trailPts.length - 1 - (i + 1) * 2]
+      s.visible = !!pt
+      if (!pt) return
+      s.position.copy(pt)
+      const k = 1 - i / this.trail.length
+      s.scale.setScalar(0.04 * k)
+      s.material.opacity = 0.7 * k
+    })
+
+    this.landRing.visible = !!landing && flying
+    if (landing) {
+      this.landRing.position.set(landing.x, 0.008, landing.z)
+      this.landRing.scale.setScalar(1 + Math.sin(t * 8) * 0.08)
+    }
   }
 }

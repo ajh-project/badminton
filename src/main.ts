@@ -6,6 +6,7 @@ import { bindKeyboard, bindMouseSwing, bindTouchPads, clearTaps, merge, readKeyb
 import { LONG_SERVE_HOLD, WIN_SCORE, newMatch, noControls, startMatch, step, type Controls, type GameEvent, type Match, type Side } from './match'
 import { Online, joinLink } from './net'
 import { ShuttleView, buildWorld } from './world'
+import { simulate } from './physics'
 
 type Mode = 'cpu' | 'duo' | 'online'
 type View = 'third' | 'first' | 'tv'
@@ -70,14 +71,16 @@ const isOnline = () => settings.mode === 'online'
 
 const canvas = $<HTMLCanvasElement>('#c')
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+// 폰은 해상도·그림자를 조금 낮춰서 버벅이지 않게
+const lowPower = matchMedia('(pointer: coarse)').matches
+renderer.setPixelRatio(Math.min(devicePixelRatio, lowPower ? 1.5 : 2))
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 renderer.toneMappingExposure = 1.05
 
 const scene = new THREE.Scene()
-buildWorld(scene)
+buildWorld(scene, lowPower)
 const shuttle = new ShuttleView(scene)
 
 const cams: [THREE.PerspectiveCamera, THREE.PerspectiveCamera] = [
@@ -146,8 +149,6 @@ function desiredAim(side: Side, eye: THREE.Vector3, base: { x: number; y: number
   const fy = fwdYaw(p.facing)
   const b = aimAt(eye, base)
   let tracking = false
-  // 기준: 셔틀을 볼 때는 지금 보는 방향(가만히 있기), 아니면 정면
-  const cur = camAim[side]
   let yaw = wrapAngle(b.yaw - fy)
   let pitch = b.pitch
 
@@ -155,19 +156,18 @@ function desiredAim(side: Side, eye: THREE.Vector3, base: { x: number; y: number
     yaw += manualLook.yaw
     pitch += manualLook.pitch
   } else if (track > 0) {
-    // 자동 추적 (실제 배드민턴처럼): 몸은 네트를 보고, 셔틀이 시야 가장자리로 가면 그만큼만 고개를 돌림
+    // 자동 추적: 시야는 항상 정면(좌우 고정). 공이 높이 떠서 화면 위로 나가려 할 때만 고개를 들어 따라감
     const s = match.shuttle
     const ahead = (s.p.z - p.z) * p.facing
-    if (ahead > 0.3 && (s.inPlay || s.heldBy !== null)) {
-      const t = aimAt(eye, { x: s.p.x, y: Math.max(0.3, s.p.y), z: s.p.z })
-      const ty = wrapAngle(t.yaw - fy)
-      const cam = cams[side]
-      const halfV = (cam.fov * Math.PI) / 360
-      const halfH = Math.atan(Math.tan(halfV) * cam.aspect)
-      // 지금 보는 방향에서 셔틀이 화면 가운데 영역(track 비율) 안에 있으면 그대로, 벗어날 때만 그만큼 돌림
-      yaw = clamp(wrapAngle(cur.yaw - fy), ty - halfH * track, ty + halfH * track)
-      pitch = clamp(cur.pitch, t.pitch - halfV * track, t.pitch + halfV * track)
-      tracking = true
+    if (ahead > 0.3 && s.inPlay) {
+      const t = aimAt(eye, { x: s.p.x, y: s.p.y, z: s.p.z })
+      const halfV = (cams[side].fov * Math.PI) / 360
+      // 화면 위쪽 track 비율 지점보다 공이 더 높으면, 그만큼만 위를 봄 (아래로는 안 내려감)
+      const need = t.pitch - halfV * track
+      if (need > pitch) {
+        pitch = need
+        tracking = true
+      }
     }
   }
   return { yaw: clamp(yaw, -1.35, 1.35) + fy, pitch: clamp(pitch, -0.6, 1.25), tracking }
@@ -919,10 +919,12 @@ let last = performance.now()
 let prevPhase = match.phase
 
 function render() {
-  const w = innerWidth
-  const h = innerHeight
+  // 실제로 보이는 화면 크기 (폰 주소창이 나타나거나 사라지면 바뀜) → 캔버스도 정확히 그 크기로
+  const vv = window.visualViewport
+  const w = Math.round(vv?.width ?? innerWidth)
+  const h = Math.round(vv?.height ?? innerHeight)
   const size = renderer.getSize(new THREE.Vector2())
-  if (size.x !== w || size.y !== h) renderer.setSize(w, h, false)
+  if (size.x !== w || size.y !== h) renderer.setSize(w, h, true)
 
   const split = document.body.classList.contains('is-split')
   const view = settings.view
@@ -986,7 +988,9 @@ function frame(now: number) {
 
   if (chars) for (const [i, c] of chars.entries()) c.update(match.players[i], dt, SWING_TIME)
   const s = match.shuttle
-  shuttle.update(s.p, s.v, s.heldBy === null)
+  // 날아가는 중이면 떨어질 곳 예측 (노란 고리)
+  const landing = s.inPlay && s.heldBy === null && match.phase === 'rally' ? simulate(s.p, s.v, 1 / 60).land : null
+  shuttle.update(s.p, s.v, s.heldBy === null, landing, now / 1000)
   if (match.phase !== 'menu') {
     for (const side of [0, 1] as Side[]) updateCamera(side, dt, settings.view)
   } else {

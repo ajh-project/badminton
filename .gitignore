@@ -4,3 +4,4 @@ dist
 .DS_Store
 .claude
 shot*.png
+dbg.ts

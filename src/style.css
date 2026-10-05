@@ -54,38 +54,43 @@ button {
   display: block;
 }
 
-/* 점수판 */
+/* 점수판: 왼쪽 위 작은 2줄 (TV 중계 스타일, 공을 가리지 않게) */
 .hud {
   position: fixed;
-  top: max(10px, env(safe-area-inset-top));
-  left: 50%;
-  transform: translateX(-50%);
+  top: max(8px, env(safe-area-inset-top));
+  left: max(8px, env(safe-area-inset-left));
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 7px 9px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.86);
-  backdrop-filter: blur(8px);
-  box-shadow: 0 6px 24px rgba(20, 60, 100, 0.2);
+  flex-direction: column;
+  gap: 2px;
+  min-width: 108px;
+  padding: 5px 6px 4px;
+  border-radius: 10px;
+  background: rgba(20, 28, 42, 0.62);
+  backdrop-filter: blur(6px);
+  color: #fff;
   z-index: 5;
+  pointer-events: none;
 }
 .score {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
+  line-height: 1.25;
 }
-.score b {
-  min-width: 48px;
-  text-align: center;
-  font-size: 26px;
-  font-weight: 900;
-  color: #fff;
-  border-radius: 999px;
-  padding: 1px 10px;
-  font-variant-numeric: tabular-nums;
+.score i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.score.p1 i {
+  background: var(--p1);
+}
+.score.p2 i {
+  background: var(--p2);
 }
 .score .name {
+  flex: 1;
   font-size: 12px;
   font-weight: 700;
   max-width: 64px;
@@ -93,24 +98,26 @@ button {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.score.p1 b {
-  background: var(--p1);
-}
-.score.p2 b {
-  background: var(--p2);
-}
-.score.p1 .name {
-  color: var(--p1);
-}
-.score.p2 .name {
-  color: var(--p2);
+.score b {
+  min-width: 18px;
+  text-align: right;
+  font-size: 16px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
 }
 .hint {
-  min-width: 120px;
-  text-align: center;
-  font-size: 12px;
+  margin-top: 1px;
+  padding-top: 3px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  font-size: 10px;
   font-weight: 700;
-  color: var(--dim);
+  color: rgba(255, 255, 255, 0.75);
+  white-space: nowrap;
+}
+/* 화면을 나눌 때는 가운데 경계 위에 (양쪽 모두 볼 수 있게) */
+.is-split .hud {
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .topbtns {
@@ -149,6 +156,18 @@ button {
   text-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   animation: pop 1s ease-out forwards;
   white-space: nowrap;
+}
+/* 폰(낮은 가로 화면)에서는 버튼·글자를 작게 */
+@media (max-height: 500px) {
+  .toast {
+    font-size: 22px;
+    top: 16%;
+  }
+  .topbtns button {
+    padding: 6px 8px;
+    font-size: 12px;
+    border-radius: 10px;
+  }
 }
 @keyframes pop {
   0% {

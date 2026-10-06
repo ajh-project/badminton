@@ -26,8 +26,8 @@
 
     <!-- 점수판 -->
     <div class="hud">
-      <div class="score p1"><i></i><span class="name" id="n0">P1</span><b id="s0">0</b></div>
-      <div class="score p2"><i></i><span class="name" id="n1">P2</span><b id="s1">0</b></div>
+      <div class="score p1"><i></i><span class="name" id="n0">P1</span><em id="g0"></em><b id="s0">0</b></div>
+      <div class="score p2"><i></i><span class="name" id="n1">P2</span><em id="g1"></em><b id="s1">0</b></div>
       <div class="hint" id="hint">11점 먼저!</div>
     </div>
     <div class="topbtns">
@@ -37,6 +37,8 @@
       <button id="btn-menu" title="메뉴 (Esc)">⏸</button>
     </div>
     <div id="toasts" class="toasts"></div>
+    <!-- 심판 콜 (게임 포인트, 듀스, 인터벌…) -->
+    <div id="call" class="call"></div>
 
     <!-- 터치 조작 -->
     <div id="pads" class="pads">
@@ -62,7 +64,7 @@
         <header>
           <p class="emoji">🏸</p>
           <h1>배드민턴 3D</h1>
-          <p class="sub">내 얼굴로 하는 배드민턴 · 11점 먼저 내면 승리</p>
+          <p class="sub">내 얼굴로 하는 배드민턴 · 21점 3게임 2선승</p>
         </header>
 
         <section>
@@ -103,6 +105,25 @@
             <span id="on-opp-text">상대</span>
           </div>
           <button id="on-leave" class="link-btn" type="button">방 나가기</button>
+        </section>
+
+        <section>
+          <p class="label">경기 방식</p>
+          <div class="seg" data-setting="format">
+            <button data-value="match">🏆 실제 경기 (21점·3게임)</button>
+            <button data-value="quick">⚡ 빠른 경기 (11점)</button>
+          </div>
+          <p class="note" id="format-note"></p>
+        </section>
+
+        <section class="level-section">
+          <p class="label">컴퓨터 난이도</p>
+          <div class="seg" data-setting="level">
+            <button data-value="rookie">🐣 입문</button>
+            <button data-value="normal">🙂 보통</button>
+            <button data-value="pro">🔥 고수</button>
+            <button data-value="master">👹 프로</button>
+          </div>
         </section>
 
         <section>

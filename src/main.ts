@@ -3,7 +3,21 @@ import * as THREE from 'three'
 import QRCode from 'qrcode'
 import { Character, photoToFace, type Gender, type Look } from './character'
 import { bindKeyboard, bindMouseSwing, bindTouchPads, clearTaps, merge, readKeyboard, readTouch } from './input'
-import { LONG_SERVE_HOLD, WIN_SCORE, newMatch, noControls, startMatch, step, type Controls, type GameEvent, type Match, type Side } from './match'
+import {
+  LONG_SERVE_HOLD,
+  RULES,
+  newMatch,
+  noControls,
+  pointCall,
+  startMatch,
+  step,
+  type AiLevel,
+  type Controls,
+  type Format,
+  type GameEvent,
+  type Match,
+  type Side,
+} from './match'
 import { Online, joinLink } from './net'
 import { ShuttleView, buildWorld } from './world'
 import { simulate } from './physics'
@@ -27,12 +41,20 @@ interface Settings {
   look: 'auto' | 'manual'
   looks: [LookBase, LookBase]
   auto: [boolean, boolean]
+  /** 경기 방식: 실제 경기(21점 3게임) / 빠른 경기(11점 1게임) */
+  format: Format
+  /** 컴퓨터 난이도 */
+  level: AiLevel
 }
+
+const LEVEL_NAME: Record<AiLevel, string> = { rookie: '🐣 입문', normal: '🙂 보통', pro: '🔥 고수', master: '👹 프로' }
 
 const DEFAULTS: Settings = {
   mode: 'cpu',
   view: 'third',
   look: 'auto',
+  format: 'match',
+  level: 'normal',
   looks: [
     { gender: 'm', shirt: SHIRTS[0] },
     { gender: 'f', shirt: SHIRTS[1] },
@@ -374,14 +396,31 @@ function handleEvents() {
     } else if (e.kind === 'point' && e.side !== undefined) {
       sound('point')
       toast(`${nameOf(e.side)} 득점! ${e.text ?? ''}`, colorOf(e.side))
+    } else if (e.kind === 'call' && e.text) {
+      // 심판 콜: 득점 알림 조금 뒤에 크게
+      const who = e.side !== undefined && /포인트|종료|셋/.test(e.text) ? `${nameOf(e.side)} ` : ''
+      setTimeout(() => callBanner(`${who}${e.text}`), 700)
     }
   }
   match.events.length = 0
 }
 
+/** 화면 가운데 큰 안내 (게임 포인트, 듀스, 인터벌…) */
+function callBanner(text: string) {
+  const el = $('#call')
+  el.textContent = text
+  el.classList.remove('show')
+  void el.offsetWidth // 애니메이션 다시 시작
+  el.classList.add('show')
+}
+
 function updateHud() {
   $('#s0').textContent = String(match.players[0].score)
   $('#s1').textContent = String(match.players[1].score)
+  // 이긴 게임 수 (3게임 경기일 때만)
+  const multi = match.rules.gamesToWin > 1
+  $('#g0').textContent = multi ? String(match.games[0]) : ''
+  $('#g1').textContent = multi ? String(match.games[1]) : ''
   const hint = $('#hint')
   if (match.phase === 'serve') {
     const server = match.server
@@ -395,9 +434,11 @@ function updateHud() {
     } else if (mine) {
       hint.textContent = `${nameOf(server)} 서브 · 탁=숏 꾹=롱`
     } else hint.textContent = `${nameOf(server)} 서브`
-  } else if (match.players.some((p) => p.score === WIN_SCORE - 1) && match.phase !== 'over') {
-    hint.textContent = '매치 포인트!'
-  } else hint.textContent = `${WIN_SCORE}점 먼저!`
+  } else {
+    const call = match.phase !== 'over' ? pointCall(match) : null
+    const game = match.rules.gamesToWin > 1 ? `${match.gameNo}게임 · ` : ''
+    hint.textContent = call ? `${game}${call.text}` : `${game}${match.rules.points}점`
+  }
 }
 
 // ---------- 조작 ----------
@@ -474,6 +515,9 @@ function sendSnapshot(now: number) {
     ph: match.phase,
     sv: match.server,
     wn: match.winner,
+    gw: match.games,
+    gn: match.gameNo,
+    gs: match.gameScores,
     ev: pendingEvents.splice(0),
   })
 }
@@ -506,6 +550,9 @@ function applySnapshot(msg: any) {
   match.phase = phase
   match.server = msg.sv
   match.winner = msg.wn
+  match.games = msg.gw
+  match.gameNo = msg.gn
+  match.gameScores = msg.gs
   for (const e of msg.ev as GameEvent[]) match.events.push(e)
 }
 
@@ -520,7 +567,8 @@ online.onMessage = async (msg) => {
       if (document.body.classList.contains('playing')) buildCharacters()
       break
     case 'start':
-      if (online.role === 'guest') beginMatch()
+      // 경기 방식은 방장 설정을 따름
+      if (online.role === 'guest') beginMatch(msg.format === 'quick' ? 'quick' : 'match')
       break
     case 'menu':
       if (document.body.classList.contains('playing') || !$('#over').classList.contains('hidden')) {
@@ -572,7 +620,7 @@ function drawFace(cv: HTMLCanvasElement, face: HTMLCanvasElement | null, gender:
 function syncMenu() {
   document.body.classList.toggle('mode-online', isOnline())
   for (const seg of document.querySelectorAll<HTMLElement>('.seg[data-setting]')) {
-    const key = seg.dataset.setting as 'mode' | 'view' | 'look'
+    const key = seg.dataset.setting as 'mode' | 'view' | 'look' | 'format' | 'level'
     for (const b of seg.querySelectorAll<HTMLButtonElement>('button')) b.classList.toggle('on', b.dataset.value === settings[key])
   }
   for (const card of document.querySelectorAll<HTMLElement>('.pcard')) {
@@ -624,6 +672,16 @@ function syncMenu() {
         : settings.view === 'first'
           ? '내 눈높이에서 봐요. 셔틀 그림자를 보고 위치를 잡으세요!'
           : '내 캐릭터 뒤에서 봐요.'
+  // 경기 방식·난이도 안내. 난이도는 컴퓨터랑 할 때만, 온라인 참가자는 방장 설정을 따름
+  document.body.classList.toggle('mode-cpu', settings.mode === 'cpu')
+  document.body.classList.toggle('online-guest', isOnline() && online.role === 'guest')
+  const r = RULES[settings.format]
+  $('#format-note').textContent =
+    online.role === 'guest'
+      ? '경기 방식은 방장이 정해요.'
+      : settings.format === 'match'
+        ? `${r.points}점 먼저 내면 그 게임 승리 · 3게임 중 2게임 이기면 승리 · 11점 인터벌`
+        : `${r.points}점 먼저 내면 승리 (1게임)`
   $('#look-note').textContent =
     settings.view === 'tv'
       ? ''
@@ -813,12 +871,12 @@ function applyLayout() {
 function startGame() {
   if (isOnline()) {
     if (online.role !== 'host' || !online.connected) return
-    online.send({ t: 'start' })
+    online.send({ t: 'start', format: settings.format })
   }
-  beginMatch()
+  beginMatch(settings.format)
 }
 
-function beginMatch() {
+function beginMatch(format: Format) {
   wakeAudio()
   enterFullscreen()
   me = isOnline() && online.role === 'guest' ? 1 : 0
@@ -830,11 +888,13 @@ function beginMatch() {
       auto: host ? [settings.auto[0], remote.auto] : [remote.auto, settings.auto[0]],
       remote: !host,
       external: host ? [false, true] : [true, false],
+      format,
     })
     guestIn.pos = null
   } else {
-    startMatch(match, { cpu: [false, settings.mode === 'cpu'], auto: settings.auto })
+    startMatch(match, { cpu: [false, settings.mode === 'cpu'], auto: settings.auto, format, level: settings.level })
   }
+  if (match.rules.gamesToWin > 1) setTimeout(() => callBanner('러브 올 · 플레이'), 400)
   Object.assign(oppTarget, { x: match.players[0].x, z: match.players[0].z, y: 0 })
   snapCameras()
   applyLayout()
@@ -869,7 +929,14 @@ function showOver() {
   else title = w === me ? '이겼다! 🎉' : settings.mode === 'cpu' ? '컴퓨터 승리… 😵' : '졌다… 😵'
   $('#over-title').textContent = title
   $('#over-title').style.color = colorOf(w)
-  $('#over-score').textContent = `${match.players[me].score} : ${match.players[me === 0 ? 1 : 0].score}`
+  // 내 쪽 기준 점수: 3게임 경기면 게임 수 + 게임별 점수, 빠른 경기면 점수만
+  const op = me === 0 ? 1 : 0
+  if (match.rules.gamesToWin > 1) {
+    const detail = match.gameScores.map((g) => `${g[me]}-${g[op]}`).join(', ')
+    $('#over-score').textContent = `게임 ${match.games[me]} : ${match.games[op]} (${detail})`
+  } else $('#over-score').textContent = `${match.players[me].score} : ${match.players[op].score}`
+  const lv = settings.mode === 'cpu' ? ` · 컴퓨터 ${LEVEL_NAME[settings.level]}` : ''
+  $('#over-score').textContent += lv
   const guest = isOnline() && online.role === 'guest'
   $('#again').style.display = guest ? 'none' : ''
   $('#over').classList.remove('hidden')

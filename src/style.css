@@ -100,6 +100,21 @@ button {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* 이긴 게임 수 (3게임 경기일 때) */
+.score em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 800;
+  min-width: 14px;
+  text-align: center;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffd84d;
+}
+.score em:empty {
+  display: none;
+}
 .score b {
   min-width: 18px;
   text-align: right;
@@ -138,6 +153,66 @@ button {
   font-size: 13px;
   font-weight: 700;
   box-shadow: 0 4px 14px rgba(20, 60, 100, 0.18);
+}
+
+/* 심판 콜: 화면 가운데 큰 띠 */
+.call {
+  position: fixed;
+  left: 50%;
+  top: 38%;
+  transform: translate(-50%, -50%);
+  padding: 10px 26px;
+  border-radius: 12px;
+  background: rgba(15, 22, 36, 0.78);
+  color: #ffd84d;
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 6;
+}
+.call.show {
+  animation: call 2.2s ease-out forwards;
+}
+@keyframes call {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.8);
+  }
+  12% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.05);
+  }
+  20% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (max-height: 500px) {
+  .call {
+    font-size: 20px;
+    padding: 7px 16px;
+  }
+}
+
+/* 난이도는 컴퓨터랑 할 때만 */
+.level-section {
+  display: none;
+}
+.mode-cpu .level-section {
+  display: block;
+}
+/* 온라인 참가자는 경기 방식을 고르지 않음 (방장이 정함) */
+.online-guest .seg[data-setting='format'] {
+  pointer-events: none;
+  opacity: 0.5;
 }
 
 /* 시야 정면 맞추기 버튼은 직접 조작일 때만 */

@@ -2,7 +2,6 @@
 
 import { COURT, predictAt, simulate, solveAngle, solveClearingNet, stepShuttle, type V3 } from './physics'
 
-export const WIN_SCORE = 11
 const MOVE_SPEED = 5.2
 const JUMP_V = 3.6
 const P_GRAVITY = 14
@@ -14,6 +13,45 @@ export type ShotKind = 'clear' | 'drop' | 'drive' | 'smash' | 'serveShort' | 'se
 
 /** 서브 버튼을 이 시간(초) 이상 누르면 롱서브 */
 export const LONG_SERVE_HOLD = 0.3
+
+// ---------- 경기 규칙 ----------
+
+export type Format = 'match' | 'quick'
+export interface Rules {
+  points: number // 한 게임 점수
+  cap: number // 듀스가 계속되면 이 점수 먼저 내면 끝
+  gamesToWin: number
+  interval: number | null // 이 점수에 먼저 닿으면 인터벌
+}
+/**
+ * match = 21점 3게임 2선승, quick = 빠른 경기 (11점 1게임)
+ * 듀스 없음: 목표 점수를 먼저 내면 바로 그 게임 승리 (cap = points). 듀스를 다시 넣으려면 cap을 키우면 됨 (예: 21점 → 30)
+ */
+export const RULES: Record<Format, Rules> = {
+  match: { points: 21, cap: 21, gamesToWin: 2, interval: 11 },
+  quick: { points: 11, cap: 11, gamesToWin: 1, interval: null },
+}
+
+// ---------- 컴퓨터 난이도 ----------
+
+export type AiLevel = 'rookie' | 'normal' | 'pro' | 'master'
+interface AiProfile {
+  miss: number // 위치를 잘못 잡을 확률
+  speed: number // 이동 속도 배수
+  err: number // 노린 곳에서 벗어나는 정도 (m)
+  react: number // 상대가 친 뒤 움직이기 시작하는 데 걸리는 시간 (초)
+  smash: number // 샷 고를 확률
+  drop: number
+  drive: number
+  smart: boolean // 빈 곳을 노림
+  jump: number // 스매시 때 점프할 확률
+}
+export const AI_LEVELS: Record<AiLevel, AiProfile> = {
+  rookie: { miss: 0.38, speed: 0.72, err: 0.75, react: 0.35, smash: 0.04, drop: 0.12, drive: 0.08, smart: false, jump: 0.2 },
+  normal: { miss: 0.16, speed: 0.92, err: 0.45, react: 0.15, smash: 0.18, drop: 0.2, drive: 0.15, smart: false, jump: 0.7 },
+  pro: { miss: 0.06, speed: 1.0, err: 0.3, react: 0.06, smash: 0.28, drop: 0.22, drive: 0.15, smart: true, jump: 1 },
+  master: { miss: 0.015, speed: 1.12, err: 0.18, react: 0.02, smash: 0.34, drop: 0.24, drive: 0.14, smart: true, jump: 1 },
+}
 
 /** 선수 기준 조작: mz>0 = 네트 쪽(앞), mx>0 = 오른쪽 */
 export interface Controls {
@@ -45,6 +83,9 @@ export interface Player {
   /** 서브 버튼을 누르고 있는 시간 (-1이면 안 누름) */
   serveCharge: number
   serveKind: 'short' | 'long' | null
+  aiLevel: AiLevel
+  speedMul: number
+  aimErr: number
 }
 
 export interface Shuttle {
@@ -56,7 +97,8 @@ export interface Shuttle {
 }
 
 export interface GameEvent {
-  kind: 'hit' | 'net' | 'point' | 'serve'
+  /** call = 심판 콜 (게임 포인트, 매치 포인트, 듀스, 인터벌, 게임) */
+  kind: 'hit' | 'net' | 'point' | 'serve' | 'call'
   side?: Side
   shot?: ShotKind
   text?: string
@@ -79,6 +121,16 @@ export interface Match {
   remote: boolean
   /** 위치를 네트워크로 받는 선수 (방장 쪽에서 본 참가자) */
   external: [boolean, boolean]
+  rules: Rules
+  /** 이긴 게임 수 */
+  games: [number, number]
+  /** 몇 번째 게임인지 (1부터) */
+  gameNo: number
+  /** 끝난 게임 점수 기록 [P1, P2] */
+  gameScores: [number, number][]
+  intervalDone: boolean
+  /** 이번 득점으로 게임이 끝나서, 다음 서브 전에 새 게임 시작 */
+  pendingNewGame: boolean
 }
 
 function makePlayer(side: Side): Player {
@@ -101,6 +153,9 @@ function makePlayer(side: Side): Player {
     isCpu: false,
     serveCharge: -1,
     serveKind: null,
+    aiLevel: 'normal',
+    speedMul: 1,
+    aimErr: 0.3,
   }
 }
 
@@ -117,18 +172,38 @@ export function newMatch(): Match {
     time: 0,
     remote: false,
     external: [false, false],
+    rules: RULES.match,
+    games: [0, 0],
+    gameNo: 1,
+    gameScores: [],
+    intervalDone: false,
+    pendingNewGame: false,
   }
 }
 
 export function startMatch(
   m: Match,
-  opts: { cpu: [boolean, boolean]; auto: [boolean, boolean]; remote?: boolean; external?: [boolean, boolean] },
+  opts: {
+    cpu: [boolean, boolean]
+    auto: [boolean, boolean]
+    remote?: boolean
+    external?: [boolean, boolean]
+    format?: Format
+    level?: AiLevel
+  },
 ) {
   const fresh = newMatch()
+  const level = opts.level ?? 'normal'
   fresh.players.forEach((p, i) => {
     p.isCpu = opts.cpu[i]
     p.autoSwing = opts.auto[i]
+    if (p.isCpu) {
+      p.aiLevel = level
+      p.speedMul = AI_LEVELS[level].speed
+      p.aimErr = AI_LEVELS[level].err
+    }
   })
+  fresh.rules = RULES[opts.format ?? 'match']
   fresh.remote = opts.remote ?? false
   fresh.external = opts.external ?? [false, false]
   Object.assign(m, fresh)
@@ -203,7 +278,7 @@ function shoot(m: Match, p: Player, c: Controls, kind: ShotKind) {
   const depth = (d: number) => p.facing * d
   // 좌우 조작으로 방향 조절, 약간의 오차
   const aimX = Math.max(-1, Math.min(1, c.mx)) * rightX(p) * 1.9
-  const err = p.isCpu ? 0.45 : 0.3
+  const err = p.aimErr
   const from = { ...s.p }
   let v: V3
   switch (kind) {
@@ -253,6 +328,7 @@ export function step(m: Match, dt: number, input: [Controls, Controls]) {
     if (m.timer <= 0) {
       if (m.winner !== null) m.phase = 'over'
       else {
+        if (m.pendingNewGame) startNextGame(m)
         m.phase = 'serve'
         setupServe(m)
       }
@@ -279,8 +355,8 @@ export function step(m: Match, dt: number, input: [Controls, Controls]) {
       mx /= len
       mz /= len
     }
-    const tvx = mx * rightX(p) * MOVE_SPEED
-    const tvz = mz * p.facing * MOVE_SPEED
+    const tvx = mx * rightX(p) * MOVE_SPEED * p.speedMul
+    const tvz = mz * p.facing * MOVE_SPEED * p.speedMul
     const k = Math.min(1, dt * 14)
     p.vx += (tvx - p.vx) * k
     p.vz += (tvz - p.vz) * k
@@ -421,13 +497,70 @@ function swingLogic(m: Match, p: Player, c: Controls) {
 
 function scorePoint(m: Match, side: Side, reason: string) {
   const p = m.players[side]
+  const o = m.players[side === 0 ? 1 : 0]
+  const r = m.rules
   p.score++
-  m.server = side
+  m.server = side // 랠리포인트: 득점한 쪽이 서브
   m.lastPoint = { side, reason }
   m.phase = 'point'
   m.timer = 1.8
   m.events.push({ kind: 'point', side, text: reason, at: { ...m.shuttle.p } })
-  if (p.score >= WIN_SCORE) m.winner = side
+
+  // 게임 승리: 목표 점수 + 2점 차, 또는 상한 점수(29:29 → 30)
+  if ((p.score >= r.points && p.score - o.score >= 2) || p.score >= r.cap) {
+    m.games[side]++
+    m.gameScores.push([m.players[0].score, m.players[1].score])
+    if (m.games[side] >= r.gamesToWin) {
+      m.winner = side
+      m.timer = 2.4
+      m.events.push({ kind: 'call', side, text: '게임 셋' })
+    } else {
+      m.pendingNewGame = true
+      m.timer = 3.5
+      m.events.push({ kind: 'call', side, text: `${m.gameNo}게임 종료 · ${m.players[0].score}:${m.players[1].score}` })
+    }
+    return
+  }
+
+  // 인터벌: 한 게임에서 처음으로 11점에 닿으면 잠깐 쉼
+  if (r.interval && !m.intervalDone && p.score === r.interval && o.score < r.interval) {
+    m.intervalDone = true
+    m.timer = 3.5
+    m.events.push({ kind: 'call', text: '인터벌' })
+    return
+  }
+
+  const call = pointCall(m)
+  if (call) m.events.push({ kind: 'call', side: call.side, text: call.text })
+}
+
+/** 지금 점수에 맞는 심판 콜 (듀스 / 게임 포인트 / 매치 포인트) */
+export function pointCall(m: Match): { side?: Side; text: string } | null {
+  const r = m.rules
+  const [a, b] = [m.players[0].score, m.players[1].score]
+  // 29:29 → 다음 1점이 이김
+  if (a === b && a === r.cap - 1) {
+    const anyMatch = m.games.some((g) => g === r.gamesToWin - 1)
+    return { text: `${a} 올 · ${anyMatch ? '매치 포인트' : '게임 포인트'}` }
+  }
+  if (a === b && a >= r.points - 1) return { text: '듀스' }
+  for (const side of [0, 1] as Side[]) {
+    const me = side === 0 ? a : b
+    const op = side === 0 ? b : a
+    // 1점만 더 내면 이기는 상황
+    if ((me + 1 >= r.points && me + 1 - op >= 2) || me + 1 >= r.cap) {
+      return { side, text: m.games[side] === r.gamesToWin - 1 ? '매치 포인트' : '게임 포인트' }
+    }
+  }
+  return null
+}
+
+function startNextGame(m: Match) {
+  m.pendingNewGame = false
+  m.gameNo++
+  m.intervalDone = false
+  for (const p of m.players) p.score = 0
+  // 앞 게임을 이긴 쪽이 첫 서브 (m.server는 이미 마지막 득점자)
 }
 
 // ---------- 자동 스윙 (쉬움) / 컴퓨터 ----------
@@ -461,13 +594,17 @@ interface AiMem {
   planned: boolean
   missX: number
   missZ: number
+  moveAt: number // 이 시각부터 움직임 (반응 속도)
+  jump: boolean
 }
 const aiMem = new WeakMap<Player, AiMem>()
 
-export function aiControls(m: Match, side: Side, level = 0.75): Controls {
+export function aiControls(m: Match, side: Side): Controls {
   const p = m.players[side]
+  const opp = m.players[side === 0 ? 1 : 0]
+  const prof = AI_LEVELS[p.aiLevel]
   const c = noControls()
-  const mem = aiMem.get(p) ?? { plan: 'clear', planned: false, missX: 0, missZ: 0 }
+  const mem = aiMem.get(p) ?? { plan: 'clear', planned: false, missX: 0, missZ: 0, moveAt: 0, jump: false }
   aiMem.set(p, mem)
 
   if (m.phase === 'serve') {
@@ -482,10 +619,21 @@ export function aiControls(m: Match, side: Side, level = 0.75): Controls {
   let tz = -p.facing * 3.2 // 기본 위치: 코트 가운데
   if (hit) {
     if (!mem.planned) {
-      const r = Math.random()
-      mem.plan = r < 0.22 ? 'smash' : r < 0.42 ? 'drop' : r < 0.58 ? 'drive' : 'clear'
       mem.planned = true
-      const miss = Math.random() < (1 - level) * 0.55
+      mem.moveAt = m.time + prof.react
+      // 샷 고르기. 잘하는 컴퓨터는 상대 위치를 보고 고름 (뒤에 있으면 드롭, 네트 앞이면 높게)
+      const oppDepth = Math.abs(opp.z)
+      let dropP = prof.drop
+      let clearBias = 0
+      if (prof.smart) {
+        if (oppDepth > 4.6) dropP += 0.2
+        if (oppDepth < 2.6) clearBias = 0.25
+      }
+      const r = Math.random()
+      mem.plan =
+        r < prof.smash ? 'smash' : r < prof.smash + dropP - clearBias ? 'drop' : r < prof.smash + dropP + prof.drive - clearBias ? 'drive' : 'clear'
+      mem.jump = Math.random() < prof.jump
+      const miss = Math.random() < prof.miss
       const a = Math.random() * Math.PI * 2
       mem.missX = miss ? Math.cos(a) * 1.4 : 0
       mem.missZ = miss ? Math.sin(a) * 1.4 : 0
@@ -493,6 +641,11 @@ export function aiControls(m: Match, side: Side, level = 0.75): Controls {
     // 타격 범위 중심이 셔틀 낙하 지점에 오도록
     tx = hit.x - rightX(p) * 0.3 + mem.missX
     tz = hit.z - p.facing * 0.45 + mem.missZ
+    // 반응하기 전에는 제자리
+    if (m.time < mem.moveAt) {
+      tx = p.x
+      tz = p.z
+    }
   } else {
     mem.planned = false
   }
@@ -506,13 +659,18 @@ export function aiControls(m: Match, side: Side, level = 0.75): Controls {
   }
 
   if (hit) {
-    if (mem.plan === 'smash' && hit.t < 0.5 && hit.t > 0.3 && m.shuttle.p.y > 2.6) c.jump = true
+    if (mem.plan === 'smash' && mem.jump && hit.t < 0.5 && hit.t > 0.3 && m.shuttle.p.y > 2.6) c.jump = true
     const s = m.shuttle
     const soon = { x: s.p.x + s.v.x * 0.1, y: s.p.y + s.v.y * 0.1, z: s.p.z + s.v.z * 0.1 }
     if (inHitZone(p, soon)) {
       c.swing = true
       // 샷 종류는 스윙 순간의 앞뒤 입력으로 정해짐
       c.mz = mem.plan === 'drop' ? -1 : mem.plan === 'drive' ? 1 : 0
+      // 좌우 방향: 잘하는 컴퓨터는 상대가 없는 쪽으로, 아니면 대충
+      if (prof.smart) {
+        const openSide = Math.abs(opp.x) < 0.4 ? (Math.random() < 0.5 ? 1 : -1) : -Math.sign(opp.x)
+        c.mx = openSide * rightX(p) * (0.6 + Math.random() * 0.4)
+      } else c.mx = (Math.random() - 0.5) * 0.8
     }
   }
   return c
